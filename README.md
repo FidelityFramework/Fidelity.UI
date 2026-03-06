@@ -156,6 +156,7 @@ See the [docs/](./docs/) folder for detailed documentation:
 - [03_rendering_backends.md](./docs/03_rendering_backends.md): Platform rendering (Wayland, Quartz, D3D12)
 - [04_design_system.md](./docs/04_design_system.md): Tokens, themes, headless primitives
 - [05_wren_migration.md](./docs/05_wren_migration.md): WRENStack to native migration path
+- [06_prior_art.md](./docs/06_prior_art.md): Survey of signals-to-native frameworks
 
 ## Related Projects
 

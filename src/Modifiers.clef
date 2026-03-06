@@ -1,0 +1,43 @@
+/// Fidelity.UI - Widget Modifiers
+///
+/// Pure functions that transform Widget records via record-with-update.
+/// Designed for pipe composition: label "text" |> withColor white |> withFontSize 24
+///
+/// When method dispatch lands in Composer, these become extension methods
+/// constrained by phantom type markers (ITextWidget, IContainerWidget etc).
+/// The free functions remain as the implementation layer.
+///
+/// Design spec: docs/02_component_model.md (Modifiers section)
+module Fidelity.UI.Modifiers
+
+open Fidelity.UI.Types
+
+// ═══════════════════════════════════════════════════════════
+// LAYOUT MODIFIERS
+// ═══════════════════════════════════════════════════════════
+
+let withWidth (w: int) (widget: Widget) : Widget =
+    { widget with Width = w }
+
+let withHeight (h: int) (widget: Widget) : Widget =
+    { widget with Height = h }
+
+// ═══════════════════════════════════════════════════════════
+// VISUAL MODIFIERS
+// ═══════════════════════════════════════════════════════════
+
+let withBackground (c: Color) (widget: Widget) : Widget =
+    { widget with Background = c }
+
+let withOpacity (a: int) (widget: Widget) : Widget =
+    { widget with Opacity = a }
+
+// ═══════════════════════════════════════════════════════════
+// TEXT MODIFIERS
+// ═══════════════════════════════════════════════════════════
+
+let withFontSize (s: int) (widget: Widget) : Widget =
+    { widget with FontSize = s }
+
+let withColor (c: Color) (widget: Widget) : Widget =
+    { widget with TextColor = c }

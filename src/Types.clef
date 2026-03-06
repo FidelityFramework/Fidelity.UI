@@ -1,0 +1,45 @@
+/// Fidelity.UI - Core Types
+///
+/// Widget descriptors, colors, and layout value types.
+/// These records are the internal representation that CE builders
+/// will construct when computation expressions land in Composer.
+///
+/// Design spec: docs/02_component_model.md
+module Fidelity.UI.Types
+
+/// RGBA color (int channels, 0-255)
+type Color = { R: int; G: int; B: int; A: int }
+
+/// Widget kind tags — int discriminants until DUs land in Composer.
+/// When DUs are available, this becomes:
+///   type WidgetKind = Box | Label | SvgImage | VStack | HStack | Center
+///
+/// Widget kind values:
+///   0 = Box      (colored rectangle)
+///   1 = Label    (text display)
+///   2 = SvgImage (SVG rasterization)
+///   3 = VStack   (vertical layout container)
+///   4 = HStack   (horizontal layout container)
+///   5 = Center   (centering container)
+type Widget =
+    { Kind: int
+      Text: string
+      ImagePath: string
+      Width: int
+      Height: int
+      Background: Color
+      Opacity: int
+      FontSize: int
+      TextColor: Color
+      Gap: int
+      ChildCount: int }
+
+// ═══════════════════════════════════════════════════════════
+// WELL-KNOWN COLORS
+// Constructor functions (not module-level values) so they work
+// correctly when compiled as a dependency library.
+// ═══════════════════════════════════════════════════════════
+
+let transparent () : Color = { R = 0; G = 0; B = 0; A = 0 }
+let white () : Color = { R = 255; G = 255; B = 255; A = 255 }
+let black () : Color = { R = 0; G = 0; B = 0; A = 255 }

@@ -1,0 +1,107 @@
+/// Fidelity.UI - Widget Constructors
+///
+/// Pure functions that produce Widget descriptor records.
+/// These are the building blocks — when CE builders land,
+/// VStack() { children }.Run() calls vstack internally.
+///
+/// Naming convention: lowercase functions (label, svgImage, vstack)
+/// match the target CE type names (Label, SvgImage, VStack).
+///
+/// Design spec: docs/02_component_model.md
+module Fidelity.UI.Widgets
+
+open Fidelity.UI.Types
+
+// ═══════════════════════════════════════════════════════════
+// LEAF WIDGETS
+// ═══════════════════════════════════════════════════════════
+
+/// Text label — displays a string
+let label (text: string) : Widget =
+    { Kind = 1
+      Text = text
+      ImagePath = ""
+      Width = 0
+      Height = 0
+      Background = transparent ()
+      Opacity = 255
+      FontSize = 14
+      TextColor = white ()
+      Gap = 0
+      ChildCount = 0 }
+
+/// SVG image — rasterized at the given dimensions
+let svgImage (path: string) (width: int) (height: int) : Widget =
+    { Kind = 2
+      Text = ""
+      ImagePath = path
+      Width = width
+      Height = height
+      Background = transparent ()
+      Opacity = 255
+      FontSize = 14
+      TextColor = white ()
+      Gap = 0
+      ChildCount = 0 }
+
+/// Colored box — a filled rectangle
+let box (width: int) (height: int) (bg: Color) : Widget =
+    { Kind = 0
+      Text = ""
+      ImagePath = ""
+      Width = width
+      Height = height
+      Background = bg
+      Opacity = 255
+      FontSize = 14
+      TextColor = white ()
+      Gap = 0
+      ChildCount = 0 }
+
+// ═══════════════════════════════════════════════════════════
+// CONTAINER WIDGETS
+// ═══════════════════════════════════════════════════════════
+
+/// Vertical stack — lays out children top to bottom with gap spacing.
+/// Children are passed as an array; when CEs land, the builder's
+/// Run method collects yielded children into this array.
+let vstack (gap: int) (children: Widget array) : Widget =
+    { Kind = 3
+      Text = ""
+      ImagePath = ""
+      Width = 0
+      Height = 0
+      Background = transparent ()
+      Opacity = 255
+      FontSize = 14
+      TextColor = white ()
+      Gap = gap
+      ChildCount = Array.length children }
+
+/// Horizontal stack — lays out children left to right with gap spacing
+let hstack (gap: int) (children: Widget array) : Widget =
+    { Kind = 4
+      Text = ""
+      ImagePath = ""
+      Width = 0
+      Height = 0
+      Background = transparent ()
+      Opacity = 255
+      FontSize = 14
+      TextColor = white ()
+      Gap = gap
+      ChildCount = Array.length children }
+
+/// Center — positions its child in the center of available space
+let center (child: Widget) : Widget =
+    { Kind = 5
+      Text = ""
+      ImagePath = ""
+      Width = 0
+      Height = 0
+      Background = transparent ()
+      Opacity = 255
+      FontSize = 14
+      TextColor = white ()
+      Gap = 0
+      ChildCount = 1 }

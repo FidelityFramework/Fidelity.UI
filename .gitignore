@@ -3,6 +3,18 @@
 ##
 ## Get latest from `dotnet new gitignore`
 
+# Farscape.Cli specific output
+src/Farscape.*/output/
+src/Farscape.*/bin/
+src/Farscape.*/obj/
+src/Farscape.*/**/bin/
+src/Farscape.*/**/obj/
+
+# This ensures all generated files in output are ignored
+src/Farscape.Cli/output/**/*
+
+*.exe
+
 # dotenv files
 .env
 
@@ -18,7 +30,8 @@
 
 # Mono auto generated files
 mono_crash.*
-
+# parser output
+output
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/
@@ -37,6 +50,7 @@ bld/
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/
+.idea/
 # Uncomment if you have tasks that create the project's static files in wwwroot
 #wwwroot/
 
@@ -88,8 +102,6 @@ StyleCopReport.xml
 *.pgc
 *.pgd
 *.rsp
-# but not Directory.Build.rsp, as it configures directory-level build defaults
-!Directory.Build.rsp
 *.sbr
 *.tlb
 *.tli
@@ -424,6 +436,10 @@ autom4te.cache/
 tarballs/
 test-results/
 
+# Mac bundle stuff
+*.dmg
+*.app
+
 # content below from: https://github.com/github/gitignore/blob/main/Global/macOS.gitignore
 # General
 .DS_Store
@@ -480,7 +496,8 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+/.claude/*
+/tests/Farscape.Tests/obj/Debug/net9.0/Farscape.Tests.AssemblyInfo.fs
 
-# add masks for intermediates
-*/target
-*/target/intermediates
+targets/**
+deps/**

@@ -143,4 +143,4 @@ This self-hosting loop ensures Fidelity.UI is battle-tested on a complex, real-w
 ## Navigation
 
 - Previous: [04_design_system.md](./04_design_system.md)
-- Back to: [README](../README.md)
+- Next: [06_prior_art.md](./06_prior_art.md): Survey of signals-to-native frameworks

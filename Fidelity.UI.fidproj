@@ -1,0 +1,18 @@
+[package]
+name = "Fidelity.UI"
+version = "0.1.0"
+description = "Fidelity UI framework — widget descriptors, modifiers, rendering"
+authors = ["SpeakEZ Technologies, Inc."]
+license = "Apache-2.0"
+
+[compilation]
+target = "cpu"
+
+[build]
+sources = [
+    "src/Types.clef",
+    "src/Widgets.clef",
+    "src/Modifiers.clef"
+]
+output = "fidelity_ui"
+output_kind = "library"

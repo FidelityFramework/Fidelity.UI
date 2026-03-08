@@ -1,0 +1,113 @@
+/// Fidelity.UI.Render — Widget → Platform.Display rendering bridge
+///
+/// Dispatches widget descriptor records to platform rendering functions.
+/// SvgImage: resvg rasterize → GBM buffer → DMA-BUF → surface attach.
+/// Label: console-only for now (text rasterization not yet implemented).
+///
+/// Widget kind dispatch uses int match (until DUs land in Composer):
+///   0 = Box, 1 = Label, 2 = SvgImage, 3 = VStack, 4 = HStack, 5 = Center
+module Fidelity.UI.Render
+
+open Console
+open Fidelity.UI.Types
+open Platform.Display.Svg
+open Platform.Display.Graphics
+open Platform.Display.Surface
+
+/// Render a widget descriptor to the display.
+/// device = GBM device handle, dmabuf = zwp_linux_dmabuf_v1 handle.
+/// Returns 0 on success.
+let present (display: nativeint) (surface: nativeint)
+            (device: nativeint) (dmabuf: nativeint)
+            (widget: Widget) : int =
+    match widget.Kind with
+    | 2 ->
+        // SvgImage: rasterize → GBM buffer → DMA-BUF → present
+        let pixmap = Svg.rasterize widget.ImagePath widget.Width widget.Height
+        if pixmap = 0n then
+            Console.write "SvgImage: failed to rasterize "
+            Console.writeln widget.ImagePath
+            1
+        else
+
+        // Allocate GBM buffer object (ABGR8888 = RGBA byte order)
+        let bo = Graphics.allocateRgbaBuffer device widget.Width widget.Height
+        if bo = 0n then
+            Svg.freePixmap pixmap
+            1
+        else
+
+        // Allocate out-param storage for map
+        let strideStorage =
+            match Fidelity.Libc.Memory.malloc (unativeint 4) with
+            | Some v -> v
+            | None -> 0n
+        let mapDataStorage =
+            match Fidelity.Libc.Memory.malloc (unativeint 8) with
+            | Some v -> v
+            | None -> 0n
+
+        if strideStorage = 0n || mapDataStorage = 0n then
+            Console.writeln "SvgImage: malloc failed for map params"
+            Svg.freePixmap pixmap
+            Graphics.destroyBuffer bo
+            if strideStorage <> 0n then Fidelity.Libc.Memory.free (Some strideStorage)
+            if mapDataStorage <> 0n then Fidelity.Libc.Memory.free (Some mapDataStorage)
+            1
+        else
+
+        // Map GBM buffer for writing
+        let mapped = Graphics.mapBufferWrite bo widget.Width widget.Height
+                        strideStorage mapDataStorage
+        if mapped = 0n then
+            Svg.freePixmap pixmap
+            Graphics.destroyBuffer bo
+            Fidelity.Libc.Memory.free (Some strideStorage)
+            Fidelity.Libc.Memory.free (Some mapDataStorage)
+            1
+        else
+
+        // Copy pixel data to GBM buffer (LINEAR format — stride == width*4)
+        let totalBytes = unativeint (widget.Height * widget.Width * 4)
+        Fidelity.Libc.Memory.memcpy (Some mapped) (Some pixmap) totalBytes |> ignore
+
+        // Unmap and get DMA-BUF fd
+        let mapData = NativePtr.read (NativePtr.ofNativeInt<nativeint> mapDataStorage)
+        Graphics.unmapBuffer bo mapData
+        Svg.freePixmap pixmap
+        Fidelity.Libc.Memory.free (Some strideStorage)
+        Fidelity.Libc.Memory.free (Some mapDataStorage)
+
+        let fd = Graphics.getBufferFd bo
+        let boStride = Graphics.getBufferStride bo
+        let format = Graphics.getBufferFormat bo
+
+        // Present via DMA-BUF protocol
+        Surface.presentDmaBuf surface dmabuf fd widget.Width widget.Height boStride format
+
+        Console.write "SvgImage: presented "
+        Console.write widget.ImagePath
+        Console.write " ("
+        Console.write (Format.int widget.Width)
+        Console.write "x"
+        Console.write (Format.int widget.Height)
+        Console.writeln ")"
+        0
+
+    | 1 ->
+        Console.write "Label: "
+        Console.writeln widget.Text
+        0
+
+    | 0 ->
+        Console.write "Box: "
+        Console.write (Format.int widget.Width)
+        Console.write "x"
+        Console.writeln (Format.int widget.Height)
+        0
+
+    | _ ->
+        Console.write "Widget kind "
+        Console.write (Format.int widget.Kind)
+        Console.writeln " (not yet implemented)"
+        0

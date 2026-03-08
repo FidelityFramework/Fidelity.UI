@@ -12,7 +12,8 @@ target = "cpu"
 sources = [
     "src/Types.clef",
     "src/Widgets.clef",
-    "src/Modifiers.clef"
+    "src/Modifiers.clef",
+    "src/Render.clef"
 ]
 output = "fidelity_ui"
 output_kind = "library"

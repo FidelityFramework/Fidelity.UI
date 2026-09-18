@@ -34,6 +34,16 @@ type Widget =
       Gap: int
       ChildCount: int }
 
+/// Background fill descriptor — int discriminants until DUs land.
+///   0 = Solid (single color)
+///   1 = DiagonalGradient (top-left → bottom-right)
+/// Fields are flat (not nested Color records) to avoid Alex nested-record
+/// layout bug where memref descriptor size ≠ data size for static memrefs.
+type Background =
+    { FillKind: int
+      R0: int; G0: int; B0: int
+      R1: int; G1: int; B1: int }
+
 // ═══════════════════════════════════════════════════════════
 // WELL-KNOWN COLORS
 // Constructor functions (not module-level values) so they work
@@ -43,3 +53,15 @@ type Widget =
 let transparent () : Color = { R = 0; G = 0; B = 0; A = 0 }
 let white () : Color = { R = 255; G = 255; B = 255; A = 255 }
 let black () : Color = { R = 0; G = 0; B = 0; A = 255 }
+let gray (v: int) : Color = { R = v; G = v; B = v; A = 255 }
+let color (r: int) (g: int) (b: int) : Color = { R = r; G = g; B = b; A = 255 }
+
+// ═══════════════════════════════════════════════════════════
+// BACKGROUND CONSTRUCTORS
+// ═══════════════════════════════════════════════════════════
+
+let solidBackground (c: Color) : Background =
+    { FillKind = 0; R0 = c.R; G0 = c.G; B0 = c.B; R1 = c.R; G1 = c.G; B1 = c.B }
+
+let diagonalGradient (from: Color) (toColor: Color) : Background =
+    { FillKind = 1; R0 = from.R; G0 = from.G; B0 = from.B; R1 = toColor.R; G1 = toColor.G; B1 = toColor.B }

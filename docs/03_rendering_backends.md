@@ -1,130 +1,46 @@
-# 03 - Rendering Backends: Wayland, Quartz, D3D12
+# 03 — The native reactive-area engine
 
-## Design Goal
+Design direction, September 2026. Building a new Clef-native reactive-area engine is the primary native objective. HelloWayland supplies experimental presentation and parallel raster evidence; it is not this engine. LVGL is an embedded UI reference rather than a mandated dependency or internal architecture.
 
-Fidelity.UI components describe *what* to render. The rendering backend determines *how* pixels reach the screen. Backends are defined in Fidelity.Platform, not in Fidelity.UI, maintaining the Fidelity principle that platform details do not leak into application code.
+An area has mounted identity, a disposal scope, reactive inputs, incoming constraints and retained outputs. Its outputs may include measurement/layout, paint commands, hit regions and accessibility semantics. An area is not necessarily a framebuffer, actor, OS surface or rectangular clip.
 
-## Rendering Model
-
-Fidelity.UI uses a **region-based rendering model**. The widget tree is divided into rectangular render regions. Each region:
-
-1. Subscribes to the signals that affect its visual output
-2. Maintains a pixel buffer (or GPU texture) for its content
-3. Repaints only when one of its subscribed signals changes
-4. Submits its buffer to the compositor for display
-
-This is fundamentally different from both immediate-mode rendering (repaint everything every frame) and retained-mode widget toolkits (platform widgets with their own rendering). It's closest to how modern compositor-based systems actually work: surfaces with content, composed by the window manager.
-
-## Platform Backends
-
-### Linux: Wayland
-
-Wayland is the native display protocol on modern Linux. The application communicates directly with the compositor (Hyprland, Sway, GNOME/Mutter, KDE/KWin).
-
-**Surface model**: Each top-level window is a `wl_surface`. Subsurfaces can be used for independent render regions (e.g., a video player or GPU-rendered component within a UI).
-
-**Buffer management**: Shared memory buffers via `wl_shm` (CPU rendering) or DMA-BUF for GPU-rendered content. Fidelity.Platform provides `memfd_create` + `ftruncate` + `mmap` for shared memory allocation.
-
-**Input**: Wayland delivers input events (pointer, keyboard, touch) through `wl_seat`. Events flow into the signal-actor reactor as messages.
-
-**Key protocols**:
-- `xdg-shell`: Window management (toplevel, popup)
-- `wl_shm`: Shared memory pixel buffers
-- `wp-fractional-scale`: HiDPI support
-- `wp-viewporter`: Efficient scaling
-- `xdg-decoration`: Server-side window decorations
-
-### macOS: Quartz / Metal
-
-macOS uses Quartz (Core Graphics) for 2D rendering and Metal for GPU-accelerated rendering.
-
-**Surface model**: `NSWindow` + `NSView` hierarchy. Each render region can be a `CALayer` backed by a Metal texture for GPU rendering.
-
-**Buffer management**: `CGBitmapContext` for CPU rendering, `MTLTexture` for GPU. Core Animation composites layers automatically.
-
-**Input**: `NSEvent` / `NSResponder` chain delivers input events.
-
-**Key APIs**:
-- Core Graphics: 2D vector/raster rendering
-- Metal: GPU-accelerated rendering
-- Core Animation: Layer compositing
-- AppKit: Window and event management
-
-### Windows: D3D12 / Win32
-
-Windows uses D3D12 (or D3D11) for GPU rendering and GDI/Direct2D for software fallback.
-
-**Surface model**: `HWND` windows with `IDXGISwapChain` for GPU-rendered content.
-
-**Buffer management**: `ID3D12Resource` textures for GPU rendering, `ID2D1RenderTarget` for Direct2D.
-
-**Input**: Win32 message loop (`WM_MOUSEMOVE`, `WM_KEYDOWN`, etc.) dispatched into the signal-actor reactor.
-
-**Key APIs**:
-- D3D12: GPU-accelerated rendering
-- Direct2D: Hardware-accelerated 2D
-- DirectWrite: Text rendering
-- Win32: Window management, message loop
-
-## Rendering Pipeline
-
-```
-Signal changes
-    ↓
-Signal-Actor reactor notifies subscribed render regions
-    ↓
-Dirty regions re-execute their render functions
-    ↓
-Render functions produce drawing commands (rects, text, images, paths)
-    ↓
-Drawing commands execute against platform rendering API
-    ↓
-Platform buffer submitted to compositor
-    ↓
-Compositor displays on screen
+```text
+input/messages → stabilize demanded work → affected measure/arrange
+              → affected paint/semantics → versioned render work
+              → raster/composition → owner-affine presentation
 ```
 
-### CPU Rendering Path (Stage 1)
+The dependency graph identifies changed computations; spatial damage identifies pixels that must be refreshed. These are separate. Text/font changes may invalidate parent and sibling layout. Fill color normally affects paint. Transform/opacity can be composition-only only when the retained layer/group representation preserves the correct visual semantics.
 
-For initial implementation and fallback:
+Area descriptions begin cold. Owned activation, normally at first mount, admits demand for selected outputs; an input change marks dependent work stale without requiring evaluation of every unused branch. Frame preparation demands the necessary visual result, while layout, input and accessibility may have additional consumers. Suspension can release selected demand and keep retained state under a bounded policy. It must not silently stop an independently owned producer or background observer.
 
-1. Render regions paint into shared memory pixel buffers
-2. Buffers are submitted to Wayland via `wl_shm` / to Quartz via `CGBitmapContext` / to Win32 via GDI
-3. The compositor composites and displays
+An application can keep derived data current for an inactive view, or explicitly prepare some of its measure/paint work in advance. These are separate choices: a current chart projection does not imply prepared geometry or pixels. Preparation must run under an admitted owner and resource budget, preserve platform affinity, and record relevant data/constraint/surface revisions. Switching to the view can reuse compatible results and demand the remaining work. Resize or resource eviction may invalidate that preparation; measure this path alongside first-use latency and active-frame work.
 
-This is functional, portable, and sufficient for most UI content.
+Parent constraints and child measurements need a staged, bounded layout protocol. Each result records the applicable constraint/scene revision. Avoid arbitrary cyclic reactive fixed-point layout. Fixed or independently constrained panels are useful early parallel boundaries.
 
-### GPU Rendering Path (Stage 2+)
+Compare direct leaf bindings, pure area recomputation and hybrid retained controls/display output. An area update can rerun pure calculations without remounting its controls. Fine-grained graphs save some computation but cost nodes, edges and scheduling; area recomputation trades those costs against repeated work.
 
-For performance-critical content (large lists, animations, visualizations):
+For an initial concurrent experiment, versioned immutable area results are easier to reject atomically than partially applied patch streams. Share retained resources rather than copying every output. Ordered changesets are another candidate for large content, but need base-version checks, ordering and recovery. Couple visual, hit-test and semantic metadata to compatible revisions.
 
-1. Render regions paint into GPU textures
-2. Textures are submitted via DMA-BUF (Wayland) / Metal (macOS) / D3D12 (Windows)
-3. The compositor zero-copies the GPU texture to the display
+Damage must cover old and new visual bounds, clipping, transforms, shadows, overlap and z-order. Removal and movement must erase old pixels. Bound rectangle/tile accumulation and allow conservative merging or full-area redraw. Cache output where useful; do not require one full-size buffer per area.
 
-## Text Rendering
+Execution can progress through explicit tiers:
 
-Text rendering is a platform-specific concern handled by Fidelity.Platform:
+| Tier | Placement |
+|---|---|
+| Cooperative | Independently owned areas scheduled on one executor; useful baseline and MCU realization |
+| Worker jobs | Pure calculations or proven disjoint borrowed raster writes, committed by the presentation owner |
+| Independent domains | Owned graphs exchanging bounded versioned snapshots/messages |
+| Process isolation | Transferable data/display output with resource leases and an explicit composition protocol |
 
-| Platform | Text Engine | Font Loading |
-|----------|-------------|-------------|
-| Linux | FreeType + HarfBuzz | fontconfig |
-| macOS | Core Text | Font Manager |
-| Windows | DirectWrite | System fonts |
+Visual nesting does not prove dependency isolation or disjoint output pixels. Overlapping alpha content requires ordered composition. Unsupported placement policies require a diagnostic or explicitly selected fallback.
 
-Fidelity.UI's text components specify font family, size, weight, and color. The platform backend resolves these to native font handles and renders glyphs.
+An accepted result must match its mount generation and relevant input/layout/surface revisions. Cancellation is insufficient to prove no worker still accesses memory. Buffers become reusable only after both producer work and external display/GPU/DMA use have retired. HelloWayland's distinct worker-join and compositor-release handling is relevant evidence.
 
-## HiDPI
+Platform integration supplies windows, surfaces, input and native rendering facilities: Wayland on Linux; appropriate AppKit/Core Animation/Metal integration on macOS; Win32 and a selected rendering stack on Windows. Mobile adds its own lifecycle, input and presentation contracts. These are target plans, not implemented backend coverage in this repository. Custom drawing also requires text shaping/editing, focus and accessibility integration.
 
-All layout is in logical pixels. The rendering backend applies the platform's scale factor:
+The browser adapter maps admitted areas/controls to DOM structures. The browser performs layout and painting; a native damage rectangle does not map to a guaranteed browser repaint boundary. Shared API parity concerns behavior, identity, binding and lifecycle within declared capabilities.
 
-- **Wayland**: `wp-fractional-scale` provides the scale factor
-- **macOS**: `NSScreen.backingScaleFactor`
-- **Windows**: Per-monitor DPI via `GetDpiForWindow`
+Embedded realization needs bounded nodes/edges/queues, partial buffers, display flush completion, device-specific pixel formats and measured resource limits. It must not require a desktop thread pool or a full framebuffer per area.
 
-Render buffers are allocated at physical pixel dimensions. Layout math is in logical pixels. The framework handles the conversion.
-
-## Navigation
-
-- Previous: [02_component_model.md](./02_component_model.md)
-- Next: [04_design_system.md](./04_design_system.md): Tokens, themes, headless primitives
+The decisive native acceptance case combines telemetry, local editing, text-driven resizing, moved/removed translucent content and repeated disposal. Compare partial-update output with forced full redraw; instrument avoided measurement/paint/raster work and verify stale-result rejection, queue bounds and buffer reuse. See the [review](08_ui_model_reconsideration.md).

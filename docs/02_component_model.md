@@ -1,230 +1,54 @@
-# 02 - Component Model: Composition DSL and Phantom Types
+# 02 — Components, quiet composition and optional CEs
 
-## Design Goal
+Design direction, September 2026. Examples are proposed notation, not executable APIs in the current scaffold.
 
-Provide a component composition API that:
-1. Feels natural to F# developers (computation expressions, pipe operators)
-2. Feels familiar to WRENStack/Partas.Solid developers (signal-reactive, components run once)
-3. Provides stronger type safety than web frameworks (phantom types, compile-time widget validation)
-4. Compiles to zero-overhead native code via Firefly
-
-## Components Run Once
-
-This is the foundational principle borrowed from SolidJS and diverging from React/Fabulous:
+Quiet function/list composition is the preferred starting point. Typed properties and modifiers should prevent invalid combinations. A portable semantic vocabulary describes intent; an HTML extension can expose DOM-specific features without making HTML the native object model.
 
 ```fsharp
-// This function executes ONCE when the component mounts.
-// It establishes signal subscriptions. It does NOT re-execute on state changes.
-[<Component>]
-let Counter () =
-    let count, setCount = createSignal 0
-
-    // The Stack and its children are created once.
-    // Signal reads (count()) establish fine-grained subscriptions.
-    Stack() {
-        Label($"Count: {count()}")          // Re-renders label text when count changes
-        Button("Increment", fun () ->
-            setCount (fun c -> c + 1))      // Updates signal, triggers subscriptions
-    }
+let counter =
+    Ui.component (fun () ->
+        let count = Signal.create 0
+        Ui.column [
+            Ui.button [
+                on.activate (fun _ -> Signal.update count (fun n -> n + 1))
+                Ui.text "Count"
+            ]
+            Ui.output count
+        ])
 ```
 
-The component body is a setup function, not a render function. It runs once, wires up the reactive graph, and returns a widget tree with embedded signal subscriptions.
+`Ui.component` describes a cold factory for an owned instance, normally activated at first mount. Its local state belongs to that logical identity. An explicit preparation scope may activate the instance earlier; later presentation attaches to it without repeating setup. `Ui.output` receives a reactive source through a read-only binding contract; a plain eagerly computed value remains a snapshot. Explicit `textSignal`/property-binding operations may precede convenient overloads in an implementation.
 
-## Phantom Type Markers
+The default mount should establish an owner and return an unmount lifetime. Description construction is cold: it must not create live platform objects, active subscriptions, timers or validation requests. Explicit earlier activation belongs to a service or preparation owner, with separate lifetime from its presentation attachment. Independent mounts of a reusable description create distinct local state unless an existing shared/prepared instance is explicit. Source closures are natural event handlers; their foreign callback adaptation must preserve captures and lifetime. Current experimental host restrictions are not a completed generic callback implementation.
 
-Inspired by Fabulous's `WidgetBuilder<'msg, 'marker>` pattern but adapted for the signal model.
+Functions and lists can compose cold descriptions. Their arguments must themselves preserve deferred work: passing an already-started operation cannot make it cold. A CE's `Delay`/`Run` must likewise return the intended deferred description instead of activating it as the block completes. Keeping a plan is not necessarily allocation-free, and cold construction alone neither caches a result nor defines mounted identity.
 
-Widget types carry phantom markers that constrain which modifiers are valid:
+Setup runs once per activated logical identity. Pure area projection/layout/paint functions can run again when invalidated and demanded. Local control state must survive those updates according to identity, not according to incidental expression position. This separates instance lifetime from the native area's chosen recomputation granularity and from each presentation attachment.
+
+Activation establishes demand for the required outputs; it need not force every descendant or inactive branch. An invalidated pure projection runs when an admitted consumer needs it, including a background observer keeping data current. Visibility-based suspension is a policy, not unconditional disposal: focus, layout, accessibility, submission or explicit preparation may still demand work. Replacing a presentation also need not recreate its field state or validation owner.
+
+| Operation | Required meaning |
+|---|---|
+| Static property | A fixed value |
+| Reactive property | A source/deferred read and typed target setter |
+| Conditional branch | Condition plus deferred branch ownership; explicit retention/disposal policy |
+| Keyed collection | Stable key plus a separately updateable current item payload |
+| Area | Stable visual identity, scope, constraints and stage outputs |
+| Execution boundary | Placement/transfer/admission policy, independent of visual nesting |
+
+Ordinary `if`/`for` during construction and dynamic conditional/keyed operations are different. A compiler may make dynamic syntax concise, but must preserve dependency, identity and disposal semantics. Duplicate keys, same-key replacements and index-dependent state need defined behavior.
+
+An optional layout CE should elaborate to the same semantic construction operations. A CE may also be especially useful for resource acquisition, cancellation, scratch lifetimes or dependent calculations. Keep workflow meanings explicit: reactive `let!`, acquiring a mounted resource and awaiting async work should not be accidentally conflated.
+
+Normal lexical `use` can dispose a resource when a setup function returns. Mounted ownership needs an explicit registration or a builder whose lifetime behavior is specified. Likewise, `and!` can express independent inputs without promising threads.
+
+The same function API can describe an area:
 
 ```fsharp
-// Marker hierarchy
-type IWidget = interface end
-type ITextWidget = inherit IWidget
-type IContainerWidget = inherit IWidget
-type IInputWidget = inherit IWidget
-
-// Label has ITextWidget marker
-// .fontSize() is only available on ITextWidget descendants
-// Calling .fontSize() on a Stack is a compile error
+Ui.area "telemetry" (fun () ->
+    Ui.column [ Ui.output temperature; Ui.output pressure; controls ])
 ```
 
-This catches invalid property application at compile time rather than runtime:
+Placement may later be requested through a policy. A local captured factory does not automatically become a valid cross-process closure. Typed transferable data, owner affinity and source availability remain separate obligations.
 
-```fsharp
-Label("Hello")
-    .fontSize(16)        // Compiles: Label is ITextWidget
-    .color(theme.primary) // Compiles: color is on IWidget
-
-Stack() {
-    Label("Hello")
-}
-    .gap(8)              // Compiles: gap is on IContainerWidget
-    .fontSize(16)        // COMPILE ERROR: Stack is not ITextWidget
-```
-
-## Computation Expression Builders
-
-### Container Builder
-
-Containers use F# computation expressions for child composition:
-
-```fsharp
-Stack(direction = Vertical, gap = 8) {
-    Label("First item")
-    Label("Second item")
-    for item in items() ->
-        Label(item.Name)
-    if showExtra() then
-        Label("Extra item")
-}
-```
-
-The CE builder supports `Yield`, `YieldFrom`, `For`, `Combine`, `Zero`, and `Delay` - enabling natural F# control flow inside widget trees.
-
-### Component Builder
-
-Components with local state use `let!` for signal bindings:
-
-```fsharp
-[<Component>]
-let TodoList () =
-    let todos, setTodos = createSignal []
-    let filter, setFilter = createSignal "all"
-
-    let filtered = createMemo (fun () ->
-        match filter() with
-        | "active" -> todos() |> List.filter (fun t -> not t.Done)
-        | "done" -> todos() |> List.filter (fun t -> t.Done)
-        | _ -> todos()
-    )
-
-    Stack() {
-        FilterBar(filter(), setFilter)
-        For(filtered) (fun todo _ ->
-            TodoItem(todo, setTodos)
-        )
-    }
-```
-
-### Control Flow Components
-
-Reactive control flow that updates surgically:
-
-```fsharp
-// Show: conditional rendering
-Show(when' = isLoggedIn) {
-    UserProfile()
-} |> withFallback (LoginForm())
-
-// For: keyed list rendering (each item tracked by identity)
-For(items, key = fun item -> item.Id) (fun item index ->
-    ItemRow(item, index)
-)
-
-// Switch/Match: multi-branch conditional
-Switch() {
-    Match(when' = isLoading()) { Spinner() }
-    Match(when' = isError()) { ErrorMessage() }
-    Match(when' = true) { Content() }
-}
-```
-
-These control flow components are reactive boundaries. When `isLoggedIn` changes, only the `Show` region updates - the rest of the tree is untouched.
-
-## Props and Events
-
-### Props Flow Down
-
-```fsharp
-[<Component>]
-let UserCard (name: Accessor<string>) (avatar: Accessor<string>) =
-    Card() {
-        Image(src = avatar())
-        Label(name())
-    }
-
-// Usage: props are signals, enabling fine-grained updates
-UserCard (userName) (userAvatar)
-```
-
-Props are signal accessors (`unit -> 'T`). Reading a prop inside the component body establishes a subscription - when the parent's signal changes, the child's subscribed regions update.
-
-### Events Flow Up
-
-```fsharp
-[<Component>]
-let Counter (onCountChanged: int -> unit) =
-    let count, setCount = createSignal 0
-
-    createEffect (fun () -> onCountChanged (count()))
-
-    Button("Increment", fun () -> setCount (fun c -> c + 1))
-```
-
-Event callbacks are plain functions. No message types, no discriminated union dispatch. The parent passes a callback; the child calls it.
-
-### Two-Way Binding
-
-For controlled inputs, signals can be shared:
-
-```fsharp
-[<Component>]
-let SearchBar (query: Signal<string>) =
-    let value, setValue = query
-    Input(value = value(), onInput = fun e -> setValue e.Value)
-```
-
-## Modifiers
-
-Visual properties are applied via fluent modifier methods:
-
-```fsharp
-Label("Hello")
-    .fontSize(16)
-    .color(theme.primary)
-    .padding(8, 12)
-    .cornerRadius(4)
-```
-
-Modifiers return a new widget description (struct copy, no allocation). They are constrained by phantom type markers to prevent invalid combinations at compile time.
-
-### Layout Modifiers
-
-```fsharp
-widget
-    .width(200)
-    .height(Fill)        // Fill available space
-    .minWidth(100)
-    .maxWidth(400)
-    .padding(8)
-    .margin(top = 16)
-    .align(Center)
-```
-
-### Style Modifiers
-
-```fsharp
-widget
-    .background(theme.surface)
-    .border(1, theme.outline)
-    .cornerRadius(8)
-    .shadow(elevation = 2)
-    .opacity(0.9)
-```
-
-### Interaction Modifiers
-
-```fsharp
-widget
-    .onClick(handler)
-    .onHover(handler)
-    .onFocus(handler)
-    .cursor(Pointer)
-    .focusable(true)
-    .accessibilityLabel("Close dialog")
-```
-
-## Navigation
-
-- Previous: [01_signal_system.md](./01_signal_system.md)
-- Next: [03_rendering_backends.md](./03_rendering_backends.md): Platform rendering
+Compare function and CE forms on forms, keyed editing, resources and concurrent areas before freezing either facade. Readability and diagnostics matter as much as line count. See the [review](08_ui_model_reconsideration.md).

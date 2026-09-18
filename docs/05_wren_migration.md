@@ -1,146 +1,28 @@
-# 05 - WRENStack to Fidelity.UI Migration Path
+# 05 — WREN and native convergence
 
-## The Two-Track Strategy
+Design direction, September 2026. Both WREN and native UI work are experimental. The objective is a shared semantic API with a new native reactive-area realization and a browser/DOM realization, rather than preserving one experiment as a production architecture.
 
-WRENStack and Fidelity.UI are not competitors. They are two tracks of the same strategy:
+WrenHello currently compiles F#/Partas.Solid through Fable, Solid and Vite, embeds the generated HTML, and runs it in a Composer-native WebKitGTK host. Commands and events cross a bounded ASCII script-message bridge. Its BAREWire/WebSocket path and Composer Clef-to-JavaScript/JSX path remain proposed. The current example does not establish Windows/macOS/mobile host coverage or a distributed signal system.
 
-- **WRENStack**: Ship applications today using proven web technology with native performance
-- **Fidelity.UI**: Build toward a fully native UI model with no web runtime dependency
+Current HelloWayland uses a separate typed native CPU path, bypassing this Fidelity.UI scaffold. It demonstrates owner-affine presentation, scoped borrowed pixel work and synchronous parallel rasterization. It does not demonstrate independently scheduled reactive areas.
 
-The migration path is designed so that WRENStack applications can progressively adopt Fidelity.UI as the native rendering backends mature, without rewriting application logic.
+Shared application work can include pure domain types/transitions, typed commands, selectors, portable semantic components and resource policies. Existing HTML/CSS-dependent views and Partas compilation behavior do not become portable merely by changing widget names. Target-specific assumptions must be made explicit.
 
-## What Transfers Directly
+Two browser realizations deserve bounded comparison:
 
-### Signal Primitives
+- A Solid adapter realizing admitted state/binding/lifetime semantics through Solid primitives and compilation.
+- Clef-owned incremental behavior with direct DOM construction/update operations.
 
-The signal API is designed to be isomorphic between Partas.Solid (WRENStack) and Fidelity.UI:
+Ripple is a source reference for the second, not an adopted runtime. Existing WREN packaging helps exercise both; it does not decide their semantic suitability. Neither path currently proves full Clef lowering or parity.
 
-| Partas.Solid (Web) | Fidelity.UI (Native) |
-|--------------------|--------------------|
-| `createSignal(value)` | `createSignal value` |
-| `createMemo(() => ...)` | `createMemo (fun () -> ...)` |
-| `createEffect(() => ...)` | `createEffect (fun () -> ...)` |
-| `createStore(obj)` | `createStore value` |
-| `createContext(default)` | `createContext defaultValue` |
-| `createResource(source, fetcher)` | `createResource source fetcher` |
-| `batch(() => ...)` | `batch (fun () -> ...)` |
+Use a native-led area contract and the same nontrivial authored components in both hosts. Validate keyed identity/current payload, conditional scope disposal, effect ordering, async races, events and final rendered behavior. Browser layout/paint mechanics may differ while preserving admitted control behavior. Native damage regions are not browser repaint promises.
 
-The semantics are identical. The implementation changes (JavaScript reactive runtime vs Prospero/Olivier actors), but the developer-facing API is the same.
+Cold activation and demand are conformance requirements for either browser realization. Constructing a description must not create DOM nodes or start subscriptions/validation; a mount or explicit preparation owner activates the appropriate sinks. An adapter must preserve undemanded derivations and inactive branches without importing a library's eager setup as Fidelity's default. It must also support background observation that deliberately keeps selected values current while their views are inactive. Test discarded descriptions, separate instances, prepared-instance attachment, released demand and reacquisition through the final embedded artifact.
 
-### Store Patterns
+An application may keep a core in-process, use native workers, host a WebView, or communicate with remote services. Moving to native does not inherently remove IPC. Cross-domain state remains versioned projections and commands; multiple windows/documents have distinct lifetimes and heaps unless an explicit service shares data.
 
-TanStack Store patterns used in WRENStack map to Fidelity.UI stores:
+Component-by-component mixed rendering is a separate interoperability capability. It needs host composition, focus/input/accessibility routing and ownership. Shared signal terminology alone does not implement it. Prefer a small side-by-side conformance app before promising incremental production migration.
 
-| TanStack Store (Web) | Fidelity.UI Store (Native) |
-|---------------------|-----------------------|
-| `new Store(initial)` | `createStore initial` |
-| `store.state` | `store.Value` |
-| `store.setState(updater)` | `setStore updater` |
-| `useStore(store, selector)` | `useStore store selector` |
-| `new Derived(options)` | `createMemo` with store dependency |
+Close/reopen should distinguish workload, subscription and view lifetime. A new observer receives a snapshot and subsequent updates. Packaging several pages into one asset bundle does not establish shared state or window lifecycle.
 
-### Component Structure
-
-Components follow the same "run once, subscribe to signals" model:
-
-```fsharp
-// WRENStack (Partas.Solid, compiles to SolidJS)
-[<SolidComponent>]
-let Counter () =
-    let count, setCount = createSignal 0
-    div(class' = "card") {
-        span() { $"Count: {count()}" }
-        button(onClick = fun _ -> setCount.Invoke(fun c -> c + 1)) { "+" }
-    }
-
-// Fidelity.UI (compiles to native)
-[<Component>]
-let Counter () =
-    let count, setCount = createSignal 0
-    Card() {
-        Label($"Count: {count()}")
-        Button("+", fun () -> setCount (fun c -> c + 1))
-    }
-```
-
-The structure is the same: create signals, compose widgets, read signals in widget properties. What changes is:
-- HTML elements (`div`, `span`, `button`) become Fidelity.UI widgets (`Card`, `Label`, `Button`)
-- CSS classes (`class' = "card"`) become design system styles (`.style(Card.Default)`)
-- Partas.Solid compilation target (JavaScript) becomes Firefly compilation target (native)
-
-### Application State
-
-The application state layer (stores, context, effects) transfers completely. Business logic that manages state through signals doesn't change when the rendering backend changes.
-
-## What Changes
-
-### Visual Layer
-
-HTML + CSS becomes Fidelity.UI widgets + design tokens. This is the primary migration surface:
-
-| WRENStack | Fidelity.UI |
-|-----------|-------------|
-| `div(class' = "flex flex-col gap-4")` | `Stack(direction = Vertical, gap = 4)` |
-| `button(class' = "btn btn-primary")` | `Button("text").style(Btn.Primary)` |
-| `input(class' = "input input-bordered")` | `TextInput().style(Input.Bordered)` |
-| `div(class' = "card bg-base-200")` | `Card().background(theme.surface)` |
-| Tailwind utility classes | Design tokens + semantic styles |
-| DaisyUI component classes | Headless primitives + design system |
-
-### Rendering Target
-
-The WebView disappears. Instead of:
-```
-F# → Fable → JavaScript → SolidJS → Browser DOM → WebView → Compositor
-```
-
-The path becomes:
-```
-F# → Firefly → Native Binary → Signal-Actor Reactor → Render Regions → Compositor
-```
-
-### IPC Boundary
-
-In WRENStack, frontend and backend communicate via BAREWire over WebSocket. In Fidelity.UI, everything is the same process. No IPC, no serialization, no WebSocket. Signals in the UI directly reference application state.
-
-## Migration Strategy
-
-### Phase 1: Shared State Layer
-
-Extract application state (stores, business logic, data management) into a shared module that doesn't depend on UI rendering:
-
-```
-src/
-├── Shared/
-│   ├── State.fs      # Stores, business logic (works with both targets)
-│   └── Protocol.fs   # Types (already shared in WRENStack)
-├── Frontend/
-│   └── App.fs        # WRENStack UI (Partas.Solid)
-└── Native/
-    └── App.fs        # Fidelity.UI (when ready)
-```
-
-### Phase 2: Component-by-Component
-
-Migrate individual components from Partas.Solid to Fidelity.UI. Since both use the same signal model, the state management code transfers directly - only the widget tree changes.
-
-### Phase 3: Full Native
-
-When all components are migrated, remove the WebView dependency. The application is now pure native, compiled entirely by Firefly.
-
-## Atelier: The Migration Case Study
-
-Atelier (the Fidelity IDE) is built on WRENStack today. As Fidelity.UI matures, Atelier will be the first application to migrate. This creates a tight feedback loop:
-
-1. Atelier uses WRENStack (current)
-2. Fidelity.UI development begins, informed by Atelier's needs
-3. Atelier migrates components progressively
-4. Fidelity.UI improves based on migration experience
-5. Atelier becomes fully native
-
-This self-hosting loop ensures Fidelity.UI is battle-tested on a complex, real-world application before being offered to external developers.
-
-## Navigation
-
-- Previous: [04_design_system.md](./04_design_system.md)
-- Next: [06_prior_art.md](./06_prior_art.md): Survey of signals-to-native frameworks
+See the [review](08_ui_model_reconsideration.md) for the experimental sequence and the source evidence. This direction replaces earlier claims of unchanged application code or identical runtime semantics without adapter validation.

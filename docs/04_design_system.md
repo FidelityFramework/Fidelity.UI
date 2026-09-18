@@ -1,246 +1,25 @@
-# 04 - Design System: Tokens, Themes, and Headless Primitives
+# 04 — Semantic behavior and design system
 
-## Design Goal
+Design direction, September 2026. These facilities are planned; the current scaffold does not implement a headless control library or theme engine.
 
-Separate UI **behavior** from UI **appearance**. A Dialog component knows how to manage focus, trap keyboard navigation, and handle escape-to-close. How it *looks* - colors, corners, shadows, spacing - is defined by the design system. Swapping themes changes the visual language without touching component logic.
+Keep control behavior separate from appearance. Portable controls describe roles, states, actions, focus relationships and input behavior. Browser realization maps that intent to semantic HTML/ARIA where appropriate; native realization needs platform accessibility integration. ARIA attributes themselves are not a universal accessibility model.
 
-This is the Kobalte/Radix + DaisyUI model: headless primitives provide behavior, design tokens provide appearance.
+Provide a replaceable reference control kit. Authors should be able to adjust tokens, replace one field's presentation, or compose a different control while retaining the behavior appropriate to that control. Fable.Ripple.Form.Plain is useful prior art for this progression: its field constructors and `listWith` reuse form machinery beneath custom markup. Its current form core still returns DOM items, so Fidelity needs a deeper portable boundary rather than a renamed browser renderer.
 
-## Headless Primitives
+For forms, distinguish typed behavior from its presentation. A field owns raw editable input, parsing, a valid domain result or errors, dirty/touched state, validation status and reset/commit actions. Raw text can be temporarily invalid without corrupting the domain model. Semantic bindings carry label/help/error relationships, focus requests and enabled/read-only behavior to either native controls or DOM. Replacement presentation must preserve those obligations; custom drawing or markup does not inherit accessibility correctness automatically.
 
-### What "Headless" Means
+Define field/list behavior as cold descriptions with explicit owned activation. Allocate editing state and activate subscriptions or asynchronous validators when the logical field scope is admitted. Redraw, reflow and presentation replacement preserve that scope unless the application requests a reset. Removing the logical field retires it; detaching a presentation can instead leave the scope retained by an explicit owner. A delayed validation result must match both the owner generation and current input revision before publication. Cancellation of a request and rejection of an obsolete result are separate responsibilities.
 
-A headless component provides:
-- State management (open/closed, selected/unselected, focused/unfocused)
-- Keyboard navigation (arrow keys, tab, escape, enter)
-- Accessibility semantics (roles, labels, live regions)
-- Focus management (trapping, restoration, initial focus)
+A form-list controller should own stable logical keys, separately updated item payloads and positions, add/remove actions, aggregate results and child cleanup. Its presentation consumes those bindings. Object reference identity is insufficient for refreshed immutable records or network snapshots; specify duplicate keys and remove/reinsert behavior. A field or list need not have a dedicated reactive area or thread. Long-lived kiosk/MCU checks must bound retained metadata as well as subscriptions through repeated insertion and removal.
 
-A headless component does **not** provide:
-- Colors, backgrounds, borders
-- Spacing, sizing, layout
-- Typography
-- Animations
+Design tokens describe color, spacing, typography, density and state variants. They may lower to CSS, native retained values or embedded constants. A theme change invalidates the stages affected by each token: color may repaint, while font/spacing can change measurement and layout. Theme switching is not necessarily a paint-only operation.
 
-### Primitive Catalog
+A visual designer can use alternate presentations for selection and drag handles. Editable design documents additionally need persistent identities, typed property/layout metadata and validated edit/undo operations; opaque render callbacks alone do not supply them. Keep that metadata an optional authoring capability so small embedded applications do not require a general runtime schema or designer engine.
 
-The following headless primitives are planned, inspired by Kobalte and Radix:
+A reactive area's semantics and hit geometry must agree with the accepted visual/layout revision. Headless behavior includes more than a state machine: text editing requires IME/composition, clipboard and selection; dialogs require focus/modality; mobile adds virtual keyboards, gestures, safe areas and lifecycle behavior.
 
-| Primitive | Behavior |
-|-----------|----------|
-| **Dialog** | Modal/non-modal overlay, focus trap, escape-to-close, backdrop click |
-| **Select** | Dropdown, keyboard selection, typeahead, multi-select variant |
-| **Menu** | Popup menu, nested submenus, keyboard navigation, trigger variants |
-| **Tabs** | Tab list + tab panels, keyboard left/right, lazy/eager panel rendering |
-| **Accordion** | Expandable sections, single/multiple open, keyboard navigation |
-| **Popover** | Anchored floating content, positioning logic, dismiss on outside click |
-| **Toast** | Notification queue, auto-dismiss timer, pause-on-hover, stacking |
-| **Tooltip** | Delayed show/hide, positioning, accessible description |
-| **Checkbox** | Checked/unchecked/indeterminate, group management |
-| **RadioGroup** | Single selection within group, keyboard up/down |
-| **Switch** | Toggle with on/off state |
-| **Slider** | Range input, keyboard step, min/max/step |
-| **Combobox** | Input + listbox, filtering, async search |
+Start with buttons, text/output, a real editable field, simple layout and a keyed list. Prove keyboard/touch activation, disabled state, focus retention, accessible naming and disposal before expanding the control catalog. Custom native drawing is the primary direction, so these responsibilities cannot be delegated implicitly to a browser.
 
-### Headless Usage Pattern
+Portable capability profiles declare which behaviors are available. HTML-specific document features and native/device integrations remain explicit extensions. Missing required behavior should be diagnosed or have an authored alternative, rather than silently changing semantics.
 
-```fsharp
-// The headless primitive provides behavior via signals
-Dialog.Root(open' = isOpen, onOpenChange = setIsOpen) {
-    Dialog.Trigger() {
-        // Whatever you want the trigger to look like
-        Button("Open Settings")
-    }
-    Dialog.Portal() {
-        Dialog.Overlay()
-            .background(theme.overlay)
-        Dialog.Content()
-            .background(theme.surface)
-            .cornerRadius(12)
-            .padding(24)
-            .shadow(elevation = 4) {
-            Dialog.Title() { Label("Settings") }
-            Dialog.Description() { Label("Adjust your preferences") }
-            // ... dialog content ...
-            Dialog.Close() { Button("Done") }
-        }
-    }
-}
-```
-
-The headless `Dialog` manages:
-- Open/close state via the `isOpen` signal
-- Focus trap (Tab cycles within dialog content)
-- Escape key closes the dialog
-- Click on overlay closes the dialog
-- Focus returns to trigger on close
-- Accessibility: `role="dialog"`, `aria-labelledby`, `aria-describedby`
-
-The `.background()`, `.cornerRadius()`, `.padding()`, `.shadow()` modifiers come from the design system, not the dialog primitive.
-
-## Design Tokens
-
-### What Are Tokens?
-
-Design tokens are the atomic values of a visual design system:
-
-```fsharp
-type DesignTokens = {
-    // Colors
-    Primary: Color
-    OnPrimary: Color
-    Surface: Color
-    OnSurface: Color
-    Background: Color
-    Error: Color
-    Outline: Color
-
-    // Spacing
-    SpaceXs: float   // 4
-    SpaceSm: float   // 8
-    SpaceMd: float   // 16
-    SpaceLg: float   // 24
-    SpaceXl: float   // 32
-
-    // Typography
-    FontFamily: string
-    FontSizeBody: float
-    FontSizeHeading: float
-    FontWeightNormal: int
-    FontWeightBold: int
-    LineHeight: float
-
-    // Shape
-    RadiusSm: float   // 4
-    RadiusMd: float   // 8
-    RadiusLg: float   // 16
-    RadiusFull: float  // 9999
-
-    // Elevation
-    Shadow1: Shadow
-    Shadow2: Shadow
-    Shadow3: Shadow
-}
-```
-
-### Token Hierarchy
-
-Tokens are organized in layers:
-
-1. **Primitive tokens**: Raw values (`blue500 = Color.hex "#3B82F6"`)
-2. **Semantic tokens**: Role-based references (`primary = blue500`, `error = red500`)
-3. **Component tokens**: Component-specific defaults (`buttonBackground = primary`, `buttonRadius = radiusMd`)
-
-### Theme Definition
-
-A theme is a complete set of semantic tokens:
-
-```fsharp
-let lightTheme = {
-    Primary = Color.hex "#3B82F6"
-    OnPrimary = Color.hex "#FFFFFF"
-    Surface = Color.hex "#FFFFFF"
-    OnSurface = Color.hex "#1F2937"
-    Background = Color.hex "#F9FAFB"
-    // ...
-}
-
-let darkTheme = {
-    Primary = Color.hex "#60A5FA"
-    OnPrimary = Color.hex "#1E3A5F"
-    Surface = Color.hex "#1F2937"
-    OnSurface = Color.hex "#F9FAFB"
-    Background = Color.hex "#111827"
-    // ...
-}
-```
-
-### Theme Delivery
-
-Themes are delivered via the Context system (hierarchical signal propagation):
-
-```fsharp
-let ThemeContext = createContext lightTheme
-
-// At the app root
-ThemeContext.Provider(currentTheme()) {
-    App()
-}
-
-// In any component
-let theme = useContext ThemeContext
-Label("Hello").color(theme.Primary)
-```
-
-When `currentTheme` changes (e.g., user toggles dark mode), every component that reads from `ThemeContext` is notified via the signal-actor graph. Only the visual properties that reference theme tokens repaint.
-
-## Semantic Classes
-
-Inspired by DaisyUI's approach of semantic class names over utility classes:
-
-```fsharp
-// Instead of specifying every visual property:
-Button("Click me")
-    .background(theme.primary)
-    .color(theme.onPrimary)
-    .padding(8, 16)
-    .cornerRadius(theme.radiusMd)
-    .fontSize(theme.fontSizeBody)
-
-// Apply a semantic style:
-Button("Click me")
-    .style(Btn.Primary)
-
-// Or with size variants:
-Button("Click me")
-    .style(Btn.Primary)
-    .size(Btn.Lg)
-```
-
-Semantic styles are defined as token compositions in the design system:
-
-```fsharp
-module Btn =
-    let Primary = Style [
-        Background theme.primary
-        Color theme.onPrimary
-        Padding (theme.spaceSm, theme.spaceMd)
-        CornerRadius theme.radiusMd
-        FontSize theme.fontSizeBody
-        FontWeight theme.fontWeightBold
-    ]
-
-    let Lg = SizeStyle [
-        Padding (theme.spaceMd, theme.spaceLg)
-        FontSize theme.fontSizeHeading
-    ]
-```
-
-## Accessibility
-
-### Native Accessibility
-
-Unlike web ARIA attributes, native accessibility varies by platform:
-
-| Platform | Accessibility API |
-|----------|------------------|
-| Linux | ATK / AT-SPI2 |
-| macOS | NSAccessibility protocol |
-| Windows | UI Automation (UIA) |
-
-Headless primitives define accessibility **intent** (this is a dialog, this is a button, this label describes that input). The platform backend translates intent to platform-specific accessibility API calls.
-
-### Keyboard Navigation
-
-Headless primitives implement standard keyboard patterns:
-- **Dialog**: Tab cycles within, Escape closes
-- **Menu**: Arrow keys navigate, Enter selects, Escape closes
-- **Tabs**: Left/Right arrows switch tabs
-- **Select**: Arrow keys navigate options, Enter selects, typing filters
-
-These patterns are part of the headless primitive, not the design system.
-
-## Navigation
-
-- Previous: [03_rendering_backends.md](./03_rendering_backends.md)
-- Next: [05_wren_migration.md](./05_wren_migration.md): WRENStack to native migration path
+DaisyUI, Kobalte/Radix and native platform conventions can inform tokens and behavior. No claim of automatic CSS-class conversion, universal visual identity or inherited accessibility compliance is made. See the [architectural review](08_ui_model_reconsideration.md).

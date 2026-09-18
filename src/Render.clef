@@ -13,6 +13,7 @@ open Fidelity.UI.Types
 open Platform.Display.Svg
 open Platform.Display.Graphics
 open Platform.Display.Surface
+open Platform.Display.Compositing
 
 /// Render a widget descriptor to the display.
 /// device = GBM device handle, dmabuf = zwp_linux_dmabuf_v1 handle.
@@ -46,6 +47,10 @@ let present (display: nativeint) (surface: nativeint)
             match Fidelity.Libc.Memory.malloc (unativeint 8) with
             | Some v -> v
             | None -> 0n
+
+        // gbm_bo_map requires *map_data == NULL on entry (Mesa dri2_map_image contract)
+        if mapDataStorage <> 0n then
+            NativePtr.write (NativePtr.ofNativeInt<nativeint> mapDataStorage) 0n
 
         if strideStorage = 0n || mapDataStorage = 0n then
             Console.writeln "SvgImage: malloc failed for map params"
@@ -111,3 +116,115 @@ let present (display: nativeint) (surface: nativeint)
         Console.write (Format.int widget.Kind)
         Console.writeln " (not yet implemented)"
         0
+
+/// Render a splash screen: gradient background with centered SVG logo.
+/// Creates a single window-sized buffer, paints the gradient, composites
+/// the logo centered, and presents via DMA-BUF.
+/// Returns 0 on success.
+let presentSplash (display: nativeint) (surface: nativeint)
+                  (device: nativeint) (dmabuf: nativeint)
+                  (windowWidth: int) (windowHeight: int)
+                  (bg: Background) (logo: Widget) (subtitle: Widget) : int =
+    // Rasterize SVG logo
+    let pixmap = Svg.rasterize logo.ImagePath logo.Width logo.Height
+    if pixmap = 0n then
+        Console.write "Splash: failed to rasterize "
+        Console.writeln logo.ImagePath
+        1
+    else
+
+    // Allocate window-sized GBM buffer (ABGR8888)
+    let bo = Graphics.allocateRgbaBuffer device windowWidth windowHeight
+    if bo = 0n then
+        Svg.freePixmap pixmap
+        1
+    else
+
+    // Allocate out-param storage for map
+    let strideStorage =
+        match Fidelity.Libc.Memory.malloc (unativeint 4) with
+        | Some v -> v
+        | None -> 0n
+    let mapDataStorage =
+        match Fidelity.Libc.Memory.malloc (unativeint 8) with
+        | Some v -> v
+        | None -> 0n
+
+    if mapDataStorage <> 0n then
+        NativePtr.write (NativePtr.ofNativeInt<nativeint> mapDataStorage) 0n
+
+    if strideStorage = 0n || mapDataStorage = 0n then
+        Console.writeln "Splash: malloc failed for map params"
+        Svg.freePixmap pixmap
+        Graphics.destroyBuffer bo
+        if strideStorage <> 0n then Fidelity.Libc.Memory.free (Some strideStorage)
+        if mapDataStorage <> 0n then Fidelity.Libc.Memory.free (Some mapDataStorage)
+        1
+    else
+
+    let mapped = Graphics.mapBufferWrite bo windowWidth windowHeight
+                    strideStorage mapDataStorage
+    if mapped = 0n then
+        Svg.freePixmap pixmap
+        Graphics.destroyBuffer bo
+        Fidelity.Libc.Memory.free (Some strideStorage)
+        Fidelity.Libc.Memory.free (Some mapDataStorage)
+        1
+    else
+
+    // Read actual stride from GBM (bytes per row — may differ from width*4)
+    let stride = int (NativePtr.read (NativePtr.ofNativeInt<uint32> strideStorage))
+    Console.write "Splash: stride="
+    Console.write (Format.int stride)
+    Console.write " expected="
+    Console.writeln (Format.int (windowWidth * 4))
+
+    // Debug: verify Background record values
+    Console.write "Splash: bg.FillKind="
+    Console.write (Format.int bg.FillKind)
+    Console.write " R0="
+    Console.write (Format.int bg.R0)
+    Console.write " G0="
+    Console.write (Format.int bg.G0)
+    Console.write " B0="
+    Console.writeln (Format.int bg.B0)
+
+    // 1. Paint background
+    match bg.FillKind with
+    | 1 ->
+        Compositing.paintDiagonalGradient mapped windowWidth windowHeight stride
+            bg.R0 bg.G0 bg.B0
+            bg.R1 bg.G1 bg.B1
+    | _ ->
+        Compositing.paintSolidColor mapped windowWidth windowHeight stride
+            bg.R0 bg.G0 bg.B0
+
+    // 2. Composite logo centered
+    let logoX = (windowWidth - logo.Width) / 2
+    let logoY = (windowHeight - logo.Height) / 2
+    Compositing.compositeOver mapped windowWidth windowHeight stride
+        pixmap logo.Width logo.Height logoX logoY
+
+    // 3. Print subtitle to console (text rendering not yet available)
+    Console.write "Label: "
+    Console.writeln subtitle.Text
+
+    // 4. Unmap and present
+    let mapData = NativePtr.read (NativePtr.ofNativeInt<nativeint> mapDataStorage)
+    Graphics.unmapBuffer bo mapData
+    Svg.freePixmap pixmap
+    Fidelity.Libc.Memory.free (Some strideStorage)
+    Fidelity.Libc.Memory.free (Some mapDataStorage)
+
+    let fd = Graphics.getBufferFd bo
+    let boStride = Graphics.getBufferStride bo
+    let format = Graphics.getBufferFormat bo
+
+    Surface.presentDmaBuf surface dmabuf fd windowWidth windowHeight boStride format
+
+    Console.write "Splash: "
+    Console.write (Format.int windowWidth)
+    Console.write "x"
+    Console.write (Format.int windowHeight)
+    Console.writeln " presented"
+    0

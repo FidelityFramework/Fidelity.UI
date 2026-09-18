@@ -1,180 +1,34 @@
 # Fidelity.UI
 
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![License: Commercial](https://img.shields.io/badge/License-Commercial-orange.svg)](Commercial.md)
-[![Status: Design](https://img.shields.io/badge/Status-Preliminary%20Design-yellow.svg)]()
+**A shared declarative UI model for a new Clef-native reactive-area engine and browser/WebView realization.**
 
-> **Note:** This project is currently in the preliminary design phase. The documentation describes the intended architecture and features. Implementation has not yet begun.
+Status: experimental implementation and architectural design. The source in this repository is a small descriptor/rendering scaffold. It does not implement the architecture described below. WrenHello and HelloWayland are experimental hosts with useful, bounded implementation evidence.
 
-**Native UI for the Fidelity Framework - Signal-Reactive, Actor-Driven, Zero Compromise**
+The September 2026 direction favors quiet functional composition: functions, lists, typed bindings and modifiers. Optional computation expressions can express the same construction semantics or make scoped workflows easier to write. Concurrency is defined by ownership and execution contracts, independently of layout syntax.
 
-Fidelity.UI is the native user interface library for the Fidelity ecosystem. It provides the developer ergonomics of modern web UI frameworks (SolidJS, DaisyUI, TanStack) with pure native performance compiled through Firefly.
+Cold construction and demand-driven incremental work are the default design posture. A description becomes live through explicit owned activation, normally at first mount; a service or preparation scope can deliberately establish demand earlier. A background observer can keep a time-series projection current while its visual areas remain inactive. Unobserved derivations need not run merely because their inputs changed. Activation, observation and disposal must survive native and JavaScript lowering. This follows Fidelity's `Incremental<'T>` foundation, rather than adopting eager activation from a reference library.
 
-The core insight: **signals and actors are the same abstraction**. A signal that notifies its subscribers when it changes is an actor that sends messages to its dependents. Fidelity.UI unifies these models, building reactive UI on top of the Prospero/Olivier actor infrastructure rather than inventing a separate reactivity runtime.
+The primary native direction is a **reactive-area engine**. An area owns mounted identity, reactive inputs, layout/paint results and a disposal scope. Changes invalidate the affected stages of measurement, layout, painting and composition. Areas need not correspond one-to-one with actors, threads, memory arenas, framebuffers or OS surfaces. Leaf bindings, area recomputation and hybrid update policies remain experiments to compare.
 
-## Why Fidelity.UI?
+The portable layer describes controls, layout, events, identity and resource lifetimes. Native realization produces retained visual output and damage updates; browser realization maps the same admitted semantics to DOM content. Native damage rectangles are not a promise about browser repaint boundaries. HTML/CSS and device-specific features remain explicit capabilities.
 
-### The Web Got Ergonomics Right
+Clef's `Signal`, `Memo` and `Effect` surface is specified over `Observable` and `Incremental`. Signals represent changing state; events/commands represent occurrences. Actors can own graphs and connect execution domains, but mailbox coalescing does not itself provide coherent signal stabilization. The implementation and conformance work for this contract remains substantial.
 
-Modern web UI development has converged on powerful patterns:
-- **Fine-grained reactivity** (SolidJS signals) - only touched nodes update
-- **Headless components** (Kobalte/Radix) - behavior without visual opinion
-- **Semantic design systems** (DaisyUI/Tailwind) - design tokens, not inline styles
-- **Type-safe data management** (TanStack) - queries, mutations, caching
+Fabulous, ReactiveElmish.Avalonia, Partas.Solid, Fable.Ripple and FSharp.Data.Adaptive are research references. They are not adopted dependencies. In particular, Ripple's quiet syntax is valuable inspiration without making its eager DOM construction or global scheduler the native implementation model. LVGL is a reference for embedded UI scope and constraints; neither wrapping it nor reproducing its internals is the selected architecture.
 
-These patterns deserve native performance. Fidelity.UI brings them to compiled F# without a browser, without a virtual DOM, and without a JavaScript runtime.
+**Current source scope:** constructors and modifiers create flat descriptors; containers currently retain only child counts; generic child retention/layout is absent. SVG presentation and experimental splash composition exist, while label/box paths are console placeholders. The current HelloWayland executable uses its own typed rendering path rather than this scaffold. No production UI or cross-target API parity is claimed.
 
-### The Native World Got Performance Right
+The [architectural review](docs/08_ui_model_reconsideration.md) gives the source evidence, alternatives, native-area model and narrowing plan. The standing design documents are aligned with that direction:
 
-Native UI means:
-- Direct compositor access (Wayland, Quartz, Win32)
-- GPU-accelerated rendering without browser overhead
-- Microsecond event dispatch, not millisecond
-- Memory measured in kilobytes per component, not megabytes
-- Startup in milliseconds, not seconds
+- [Architecture](docs/00_architecture.md)
+- [Reactive semantics](docs/01_signal_system.md)
+- [Components and authoring](docs/02_component_model.md)
+- [Reactive areas and rendering](docs/03_rendering_backends.md)
+- [Behavior and design system](docs/04_design_system.md)
+- [WREN and native convergence](docs/05_wren_migration.md)
+- [Lessons from prior art](docs/06_prior_art.md)
+- [Reducers and selective state](docs/07_elmish_signal_hybrid.md)
 
-### Fidelity.UI Gets Both
+Next evidence: a native control panel with independently changing areas, text-driven resize, overlapping content and correct partial redraw; then the same semantic components in a DOM host, independent execution domains and a bounded physical embedded target. These are planned acceptance gates, not completed capabilities.
 
-```
-Developer ergonomics of SolidJS + DaisyUI + Kobalte + TanStack
-                            +
-Native performance of Wayland/Quartz/D3D12 via Firefly compilation
-                            +
-Actor-model reactivity via Prospero/Olivier
-```
-
-## Architecture
-
-```mermaid
-flowchart TB
-    subgraph dev["Developer API (F#)"]
-        dsl["Component DSL<br/>Computation Expressions"]
-        signals["Signal Primitives<br/>createSignal, createMemo, createEffect"]
-        store["Store<br/>Global + Local state"]
-    end
-
-    subgraph core["Fidelity.UI Core"]
-        reactor["Signal-Actor Reactor<br/>Prospero/Olivier"]
-        layout["Layout Engine<br/>Stack, Flex, Grid"]
-        headless["Headless Primitives<br/>Dialog, Select, Menu, Tabs"]
-        theme["Design System<br/>Tokens, Themes"]
-    end
-
-    subgraph render["Rendering Backends"]
-        wayland["Wayland<br/>(Linux)"]
-        quartz["Quartz/Metal<br/>(macOS)"]
-        d3d["D3D12/Win32<br/>(Windows)"]
-    end
-
-    dev --> core
-    core --> render
-```
-
-### The Signal-Actor Model
-
-Fidelity.UI does not use a virtual DOM. There is no tree diffing. Instead:
-
-1. **Signals** are reactive values that track their subscribers
-2. **Components** are functions that run once, creating signal subscriptions
-3. **Layout regions** subscribe to signals that affect their geometry
-4. **Render regions** subscribe to signals that affect their pixels
-5. When a signal changes, only subscribed regions recalculate and repaint
-
-This is architecturally identical to the actor model:
-- A signal change is a message
-- A subscriber is an actor with a mailbox
-- The dependency graph is the message routing topology
-- Batching is mailbox coalescing
-
-Prospero/Olivier provides the reactive substrate. Fidelity.UI builds UI semantics on top.
-
-### Relationship to WRENStack
-
-WRENStack (WebView + Reactive + Embedded + Native) is a SpeakEZ **product** that uses a system WebView for rendering. Fidelity.UI is the **framework** for building native UI without a WebView.
-
-The two are complementary:
-
-| Aspect | WRENStack | Fidelity.UI |
-|--------|-----------|-------------|
-| Rendering | System WebView (WebKitGTK, WKWebView, WebView2) | Direct compositor (Wayland, Quartz, Win32) |
-| UI Language | HTML/CSS via Partas.Solid | F# DSL compiled to native |
-| Reactivity | SolidJS runtime (JavaScript) | Signal-Actor model (compiled F#) |
-| Styling | DaisyUI + Tailwind (CSS) | Design token system (native) |
-| Maturity | Usable today | Design phase |
-
-Critically, the **developer-facing API is designed to feel familiar** to developers who have built WRENStack applications. The signal primitives, component composition patterns, and store model share conceptual DNA with Partas.Solid and TanStack Store.
-
-WRENStack applications can progressively migrate to Fidelity.UI as the native rendering backends mature. See [docs/05_wren_migration.md](docs/05_wren_migration.md).
-
-## Design Principles
-
-### 1. Signals Are Actors
-
-The reactive model is not bolted on top of an imperative rendering loop. It *is* the rendering loop. Every signal change flows through the Prospero/Olivier actor graph to exactly the layout and render regions that depend on it. No broadcast, no diffing, no polling.
-
-### 2. Study, Don't Adopt
-
-Fidelity.UI is informed by deep study of Fabulous (F# MVU), ReactiveElmish.Avalonia (Elmish + MVVM bridge), SolidJS (fine-grained reactivity), Kobalte (headless components), and DaisyUI (semantic design tokens). It adopts their **API conventions** without inheriting their **infrastructure assumptions** (virtual DOM, browser rendering, .NET runtime).
-
-### 3. Headless First
-
-UI behavior (focus management, keyboard navigation, ARIA semantics, state machines) is separated from visual presentation. A `Dialog` component manages open/close state, focus trapping, and escape-key handling. How it *looks* is a separate concern defined by the design system.
-
-### 4. Platform Through Fidelity.Platform
-
-Rendering backends are defined in Fidelity.Platform, not hard-coded in Fidelity.UI. The same component tree renders to Wayland on Linux, Quartz on macOS, and Win32 on Windows. Platform-specific capabilities (GPU acceleration, compositor effects) are accessed through the platform abstraction, not conditional compilation in UI code.
-
-### 5. Developer Ergonomics Are Non-Negotiable
-
-If the API requires more ceremony than the web equivalent, it's wrong. F# computation expressions, phantom type safety, and FNCS intrinsics should make the developer experience *better* than web, not worse. A developer who knows SolidJS + DaisyUI should feel at home immediately.
-
-## Technology Stack
-
-### Core (F# Native via Firefly)
-- **Signal-Actor Reactor**: Built on Prospero/Olivier actor infrastructure
-- **Layout Engine**: Stack, Flex, Grid primitives with constraint solving
-- **Component Model**: Computation expression DSL with phantom type markers
-- **Design System**: Hierarchical tokens, theme switching, semantic classes
-
-### Platform Rendering
-- **Linux**: Wayland compositor protocol via libwayland-client
-- **macOS**: Quartz/Core Graphics, Metal for GPU acceleration
-- **Windows**: D3D12 for GPU rendering, Win32 for windowing
-
-### Dependencies
-- **Fidelity.Platform**: OS abstraction (memory, display, input, events)
-- **FNCS**: Intrinsic type definitions, platform binding resolution
-- **Firefly**: AOT compilation to native binary
-
-## Documentation
-
-See the [docs/](./docs/) folder for detailed documentation:
-
-- [00_architecture.md](./docs/00_architecture.md): Signal-Actor reactive architecture
-- [01_signal_system.md](./docs/01_signal_system.md): Fine-grained reactivity primitives
-- [02_component_model.md](./docs/02_component_model.md): Composition DSL and phantom types
-- [03_rendering_backends.md](./docs/03_rendering_backends.md): Platform rendering (Wayland, Quartz, D3D12)
-- [04_design_system.md](./docs/04_design_system.md): Tokens, themes, headless primitives
-- [05_wren_migration.md](./docs/05_wren_migration.md): WRENStack to native migration path
-- [06_prior_art.md](./docs/06_prior_art.md): Survey of signals-to-native frameworks
-
-## Related Projects
-
-| Project | Role |
-|---------|------|
-| [Firefly](https://github.com/speakeztechnologies/Firefly) | F# Native AOT compiler |
-| [Fidelity.Platform](https://github.com/speakeztechnologies/Fidelity.Platform) | OS abstraction layer |
-| [FNCS](https://github.com/speakeztechnologies/fsnative) | F# Native Compiler Services |
-| [Partas.Solid](https://github.com/Partas/Partas.Solid) | F# SolidJS bindings (WRENStack frontend) |
-| [WRENStack.Tooling](https://github.com/speakeztechnologies/WRENStack.Tooling) | WRENStack design-time tooling |
-| [Atelier](https://github.com/speakeztechnologies/Atelier) | Fidelity IDE (WRENStack, future Fidelity.UI) |
-| [Fabulous](https://github.com/fabulous-dev/Fabulous) | F# MVU framework (reference, not dependency) |
-| [ReactiveElmish.Avalonia](https://github.com/JordanMarr/ReactiveElmish.Avalonia) | Elmish + reactive stores (reference) |
-
-## The Name
-
-Fidelity.UI reflects the core promise: **fidelity** to the developer's intent. The component you describe in F# is the component that renders on screen - no intermediate virtual representation, no runtime interpretation, no framework tax between your code and the pixels.
-
-## License
-
-Dual-licensed under Apache 2.0 and a commercial license. See [LICENSE](LICENSE) and [Commercial.md](Commercial.md) for details.
+Dual-licensed under Apache 2.0 and a commercial license. See [LICENSE](LICENSE) and [Commercial.md](Commercial.md).

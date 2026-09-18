@@ -1,185 +1,60 @@
-# 01 - Signal System: Fine-Grained Reactivity Primitives
+# 01 — Reactive state, events and stabilization
 
-## Design Goal
+Design direction, September 2026. This document describes required UI semantics, not an implemented signal engine. The current Clef specification defines `Signal`, `Memo`, `Effect` and `Batch` as a surface over Observable/Incremental. Fidelity.UI should consume that contract instead of introducing an unrelated native runtime table.
 
-Provide the same reactive primitives that SolidJS developers know - `createSignal`, `createMemo`, `createEffect`, `createStore` - but backed by the Prospero/Olivier actor model instead of a JavaScript runtime, and compiled to native code by Firefly.
+| Concept | UI role |
+|---|---|
+| Signal | Settable current state with change detection |
+| Memo / Incremental | Pure, demand-driven cached derivation |
+| Effect | An owned side-effecting sink, with defined execution and cleanup |
+| Observable / event | Occurrences whose multiplicity/order must be preserved unless explicitly transformed |
+| Batch | Local stabilization boundary; not rollback or a distributed transaction |
+| Selector | Read-only projection of domain state with an explicit equality policy |
+| Resource | Owned asynchronous operation with pending/result/error and stale-completion policy |
 
-A developer who has used Partas.Solid in the WRENStack should recognize the API immediately.
+Cold is the default construction posture for proposed UI components and resources. It has several distinct meanings at the primitive level: `Cold<'T>` defers repeatable work without caching; `Lazy<'T>` computes and caches once; `Incremental<'T>` adds dependencies, invalidation and cutoff. `Cold<Incremental<'T>>` defers graph construction and dependency registration as well as result evaluation. UI syntax should preserve these contracts without requiring authors to wrap every control manually.
 
-## Primitive Catalog
+The existing `Effect.create` contract registers an active, always-demanded sink. A cold component therefore defers that call until owned activation; constructing its description does not create an effect and then suppress its promised behavior. Pure stale nodes without observation remain unevaluated. Render, validation, background service and preparation sinks establish demand according to their own lifetimes. First presentation is the default activation point, but explicit preparation can admit an owned instance earlier.
 
-### Signal: Reactive Value
+Reactive callbacks are ordinary closures. FFI function pointers belong at the platform boundary. The compiler must distinguish actual reactive reads from handles captured only to write, pass elsewhere, or invoke later. Lexical capture alone is not a complete dependency analysis. Static dependencies can specialize; data-dependent branches and keyed instances need supported dynamic realization or a clear diagnostic.
 
-The fundamental primitive. A value that tracks its readers and notifies them on change.
-
-```fsharp
-// Create a signal with an initial value
-let count, setCount = createSignal 0
-
-// Read (inside a reactive context, this registers a subscription)
-let current = count()
-
-// Write (notifies all subscribers)
-setCount 5
-
-// Update from previous value
-setCount (fun prev -> prev + 1)
-```
-
-**Implementation**: A signal is an Olivier actor that holds a value and maintains a subscriber set. Reading the signal inside a tracked context (component body, effect, memo) adds the tracking context to the subscriber set. Setting the signal dispatches notifications to all subscribers.
-
-### Memo: Derived Computation
-
-A cached computation that re-evaluates only when its dependencies change.
+Proposed usage of the specified signal vocabulary:
 
 ```fsharp
-let count, setCount = createSignal 0
-let doubled = createMemo (fun () -> count() * 2)
-
-// doubled() returns 0
-setCount 5
-// doubled() returns 10 (recomputed because count changed)
-// If count hasn't changed since last read, returns cached value
+let count = Signal.create 0
+let doubled = Memo.create (fun () -> Signal.get count * 2)
+Signal.update count (fun n -> n + 1)
 ```
 
-**Implementation**: A memo is a signal-actor that subscribes to upstream signals. When notified of a change, it re-evaluates its function, and only if the result differs from the cached value does it notify its own subscribers. This prevents cascading updates through chains of derived values.
+A mounted binding must preserve a source or deferred read. Reading a signal into a string during setup produces a snapshot unless a supported transformation explicitly creates a binding. The component body is not automatically the correct subscriber for every property it constructs.
 
-### Effect: Side Effect on Change
+Before target parity is claimed, resolve and test read-after-write, reads within nested batches, initial effect timing, effect ordering, reentrancy, writes during effects, failure and cycles. Logical stabilization and frame presentation are separate: consistent state can be available before the next paint. Async suspension does not silently extend a local batch.
 
-Runs arbitrary code when tracked dependencies change.
+Demand is not the same as pixel visibility. Layout, focus, accessibility and form submission can require work for content that is offscreen. A suspended visual projection may release paint demand while retaining editing state and a separately required validation observer. Specify retention and demand release explicitly; cold work can still retain captured data or cached resources.
 
-```fsharp
-let name, setName = createSignal "world"
+Applications should be able to choose how much work stays ready:
 
-createEffect (fun () ->
-    // This re-runs whenever name() changes
-    Platform.Console.writeLine $"Hello, {name()}!"
-)
-```
+| Policy | What remains ready | Cost moved between background and request time |
+|---|---|---|
+| On demand | Cold description; other state only if separately owned | Graph activation and required computation occur on request |
+| Retain cached state | Existing instance and last cached result, possibly stale | Avoids reconstruction; invalidated derivations still need validation/recomputation |
+| Keep a projection current | A background/service observer continues demanding selected derived values | Pays ongoing update cost to reduce switching latency |
+| Prepare selected view stages | An admitted preparation scope demands controls, measurement or render preparation within known constraints | Pays additional memory/work; presentation still checks current constraints and revisions |
 
-**Implementation**: An effect is a subscriber-actor that re-runs its function when notified. Effects are scheduled after the current batch completes, preventing interleaving of state updates and side effects.
+These policies can compose across one application; they are not mutually exclusive global evaluation modes. A time-series service can ingest into bounded history and keep a windowed projection current while the corresponding chart's layout and painting remain inactive. Switching views attaches to that current projection and demands the remaining stages. Input/event ingestion is a separate lifetime: keeping a derived value cold must not silently lose samples the domain promised to retain.
 
-### Store: Structured Reactive State
+An eager operational policy can be expressed by keeping an explicit observer active. It preserves the demand-driven core: the background observer supplies demand even when no surface displays its value. Releasing a foreground observer does not release the service's observation. A preparation scope needs its own owner, retention/eviction policy and bounded scheduling budget; attaching its prepared instance must not repeat setup or duplicate subscriptions. Fresh data alone does not mean that text shaping, native buffers or DOM layout are already prepared.
 
-Deep-reactive state for complex data structures. Path-based updates allow fine-grained notification.
+The hardware/unikernel deployment profile should supply concrete memory, execution and I/O budgets for these choices. Measure first activation, cached-but-stale activation and switching to a kept-current projection, including background load and frame deadlines. Specify the allowed freshness lag and coherent revision of background snapshots. Reading the latest accepted snapshot and requesting a fresh value that may need computation or waiting are different contracts. Hardware control helps define the envelope; bounded queues, scheduling, device completion and admission still determine whether the target latency is met.
 
-```fsharp
-type TodoItem = { Id: int; Title: string; Done: bool }
-type AppState = { Todos: TodoItem list; Filter: string }
+Preparation also needs explicit priority, error and cancellation policies. Anticipated navigation must not execute business commands. Device/network access or asynchronous validation can run early only under the admitted effect policy, while pure projection work can be warmed without inventing a user action. Background budgets must leave room for interactive and other required work.
 
-let store, setStore = createStore { Todos = []; Filter = "all" }
+Cutoff suppresses propagation attributable to an unchanged input. It must not clear an independent invalidation of the same dependent from another input. Diamond graphs and multi-source batches are necessary conformance cases. An effect's `unit` result must not be used to suppress required side effects through ordinary value cutoff.
 
-// Read (fine-grained - only subscribes to accessed paths)
-let filter = store.Filter
+Signals and actors have a useful structural correspondence, but different contracts. A local owner may contain many signals. Crossing an owner/thread/process boundary uses typed messages or versioned projections. Remote updates have pending/failure/stale semantics; no synchronous distributed getter/setter is promised.
 
-// Update (only notifies subscribers of the changed path)
-setStore.Path.Map(_.Filter).Update("active")
+Every mounted component/area has a logical lifetime. Removal detaches observers, invalidates pending work, unregisters handlers and releases retained resources after outstanding users finish. Whole-actor arena retirement alone is too coarse for repeatedly mounted branches. Native scopes/pools and JavaScript host allocation realize the same logical cleanup differently.
 
-// Deep update
-setStore.Path.Map(_.Todos).Find(fun t -> t.Id = 1).Map(_.Done).Update(true)
-```
+A store adapter may expose typed selectors and explicit field operations. Ordinary record access must not be described as deep-reactive proxy access without specified compiler/library support. Large collections need identity and delta contracts; structural comparison has a cost proportional to the data actually examined.
 
-**Implementation**: A store wraps a value in a proxy that tracks access paths. When a path is read in a reactive context, only that specific path is subscribed. When a path is updated, only subscribers to that path (or ancestor paths) are notified.
-
-### Batch: Coalesced Updates
-
-Multiple signal updates in one handler trigger a single notification pass.
-
-```fsharp
-batch (fun () ->
-    setFirstName "John"
-    setLastName "Doe"
-    setAge 30
-)
-// Subscribers notified once, not three times
-```
-
-**Implementation**: Batching defers subscriber notifications until the batch function completes, then runs a single notification pass. This maps directly to Prospero/Olivier mailbox coalescing.
-
-### Context: Hierarchical State
-
-Provide values to a subtree without prop drilling.
-
-```fsharp
-let ThemeContext = createContext defaultTheme
-
-// Provider wraps a subtree
-ThemeContext.Provider(darkTheme) {
-    MyComponent()  // can access theme
-    OtherComponent()  // can access theme
-}
-
-// Consumer reads from nearest provider
-let theme = useContext ThemeContext
-```
-
-**Implementation**: Context is stored in the environment hierarchy (conceptually similar to Fabulous's `EnvironmentContext`). Context values are themselves signals - when a context value changes, all consumers in the subtree are notified.
-
-### Resource: Async Data with Lifecycle
-
-Load async data with built-in loading/error states.
-
-```fsharp
-let userId, setUserId = createSignal 1
-
-let user = createResource
-    (fun () -> userId() |> Some)
-    (fun id _ -> fetchUser id)
-
-// user.state: Unresolved | Pending | Ready | Refreshing | Errored
-// user.current: the loaded value (undefined while loading)
-// user.latest: keeps previous value while refreshing
-```
-
-**Implementation**: A resource is a compound actor that manages an async operation lifecycle. It subscribes to its source signal, triggers the fetcher on change, and exposes loading/error/data states as signals.
-
-## Reactive Scope Rules
-
-### Tracking Contexts
-
-Signal reads are only tracked inside reactive contexts:
-- **Component bodies** (during initial execution)
-- **createMemo** computations
-- **createEffect** bodies
-- **createResource** source functions
-
-Outside these contexts, signal reads return the current value without establishing subscriptions.
-
-### Untracking
-
-```fsharp
-let value = untrack (fun () -> someSignal())
-// Reads someSignal's value without subscribing
-```
-
-### Cleanup
-
-Effects can register cleanup functions that run before re-execution:
-
-```fsharp
-createEffect (fun () ->
-    let subscription = eventSource.subscribe (fun e -> handle e)
-    onCleanup (fun () -> subscription.Dispose())
-)
-```
-
-## Relationship to Prospero/Olivier
-
-The signal system is not a separate runtime bolted onto the actor model. It *is* the actor model with UI-specific semantics:
-
-| Signal Primitive | Olivier Implementation |
-|-----------------|----------------------|
-| `createSignal` | Stateful actor with subscriber set |
-| `createMemo` | Projection actor (subscribes upstream, notifies downstream) |
-| `createEffect` | Terminal actor (subscribes, runs side effects) |
-| `createStore` | Hierarchical stateful actor with path-based routing |
-| `batch` | Mailbox coalescing / transaction boundary |
-| `createContext` | Environment actor scoped to subtree |
-| `createResource` | Compound actor managing async lifecycle |
-
-This means Fidelity.UI applications can freely mix UI signals with non-UI actors. A WebSocket connection actor can dispatch messages that update UI signals. A background computation actor can emit progress signals. The reactive graph is unified.
-
-## Navigation
-
-- Previous: [00_architecture.md](./00_architecture.md)
-- Next: [02_component_model.md](./02_component_model.md): Composition DSL and phantom types
+The [review](08_ui_model_reconsideration.md) details the open semantic questions and the prior-art comparison. None of this requires a CE layout surface.

@@ -1,142 +1,38 @@
-# 00 - Architecture: The Signal-Actor Reactive Model
+# 00 — Architecture: shared semantics and native reactive areas
 
-## The Core Insight
+Design direction, September 2026. The described engine is not implemented by the current Fidelity.UI scaffold. The [review](08_ui_model_reconsideration.md) records the evidence and open decisions.
 
-Signals and actors are isomorphic abstractions:
+Fidelity.UI should provide one semantic UI model with quiet functional composition as its default. Optional CEs elaborate to the same construction operations; separate workflow builders may express resource acquisition or asynchronous work. Neither syntax determines threading.
 
-| Signal Concept | Actor Concept |
-|---------------|---------------|
-| Signal value changes | Actor receives message |
-| Dependency tracking (who reads me?) | Subscription graph (who listens to me?) |
-| Derived/memo (computed from signals) | Projection actor (transforms upstream messages) |
-| Effect (side effect on change) | Actor with side effects (IO, rendering) |
-| Batch (coalesce updates) | Mailbox batching (process N messages, one render) |
-| Store (structured reactive state) | Stateful actor (maintains model, emits deltas) |
-| `untrack` (opt out of reactivity) | Fire-and-forget (no reply expected) |
+Cold, incremental composition is the architectural starting point. Constructing a UI description must not mount controls, subscribe to producers or start validation. Explicit owned activation admits demand, normally at first mount or deliberately earlier through a service/preparation scope; subsequent invalidation recomputes demanded stale work. Description storage can still have a cost. This is a policy for the UI contract, not a claim that every ordinary Clef expression has non-strict evaluation.
 
-In both models, the fundamental primitive is: **a value changes, and only the things that declared interest in that value get notified.** No central diffing. No broadcast. No polling. The dependency graph *is* the message routing topology.
+Keep cold construction distinct from incremental evaluation: `Incremental<'T>` caches and invalidates a demanded result; `Cold<Incremental<'T>>` can defer constructing its graph at all. Mounted effects are active sinks until their owner retires them. Removing visual demand does not by itself cancel a separately owned service or an acknowledged command.
 
-Fidelity.UI does not build a separate reactivity runtime. It builds UI semantics on top of Prospero/Olivier, the Fidelity actor infrastructure.
+Demand can be kept active without surface visibility. A background observer can maintain a current time-series projection for fast view switching; an explicit preparation scope can warm selected view stages. Retaining a stale cache, maintaining current derived data and preparing layout/paint are different resource choices. Budget background work and retained memory alongside first-demand latency using the deployment's hardware and scheduling envelope. The [reactive-state draft](01_signal_system.md) records these policies.
 
-## Why Not Virtual DOM?
+The primary native realization is a new reactive-area engine. An area is a mounted visual subtree with stable identity, an owned scope, reactive inputs, incoming constraints and retained output. It organizes incremental measurement, layout, painting and composition. It need not have its own thread, actor, native surface or framebuffer.
 
-The virtual DOM (React, Fabulous) works by:
-1. Re-running the entire view function on any state change
-2. Producing a complete tree description
-3. Diffing the new tree against the old tree
-4. Applying only the differences to the real rendering surface
+Four structures have different responsibilities:
 
-This is a broadcast-then-diff architecture. Every state change triggers a full re-evaluation, and the framework discovers what changed after the fact. It works - React proved it works at scale - but it has fundamental costs:
+| Structure | Responsibility |
+|---|---|
+| Semantic/control tree | Controls, composition, focus, input and accessibility relationships |
+| Dependency graph | State dependencies, invalidation, demand, equality/cutoff |
+| Spatial composition/damage structure | Geometry, overlap, clipping, cached output and affected pixels |
+| Execution ownership graph | Serialized mutation, optional workers, supervision and communication |
 
-- **O(n) re-evaluation** where n is the tree size, even if only one leaf changed
-- **Diffing overhead** that grows with tree complexity
-- **Memory pressure** from maintaining two complete trees
-- **Latency** from the re-evaluate → diff → apply pipeline
+A shared input can affect several areas. A layout change can propagate to parents and siblings. Independent graph computations do not establish independent pixel writes when areas overlap. Explicit contracts connect these structures.
 
-For a browser where DOM manipulation is the bottleneck, virtual DOM amortizes that cost. For a native rendering surface where pixel manipulation is cheap, it's pure overhead.
+The portable semantic operations include components/scopes, static and reactive properties, events, conditional branches, keyed collections, resources, areas and execution-domain boundaries. The compiler should preserve their identities, reads, effects and lifetimes through the PSG/codata and portable middle end. A full interpreted tree or a particular intermediate dialect is not required; runtime dynamic instances and retained state still need representation.
 
-## The Signal-Actor Alternative
+Clef's signals are a surface over its Observable/Incremental contract. State and event semantics remain distinct. Owner-local graphs stabilize coherent state; actors or equivalent domains own substantial work and communicate through explicit messages/projections. An actor can contain many reactive nodes. Batching controls local stabilization; mailbox coalescing is a separate delivery policy.
 
-Fidelity.UI inverts the model:
+Native realization schedules affected layout and paint work and presents accepted output. Browser realization maps portable controls/areas to DOM content and lets the browser perform its admitted layout and painting. Native memory regions and pointers remain backend details, unavailable in portable JavaScript-facing code. Shared semantics do not imply identical allocation mechanisms.
 
-1. **Components run once.** The component function executes exactly once, establishing signal subscriptions.
-2. **Signals track subscribers.** When a signal is read inside a reactive context, it registers the reader as a subscriber.
-3. **Changes propagate directly.** When a signal value changes, it notifies exactly its subscribers - no intermediate tree, no diffing.
-4. **Layout is incremental.** Only layout regions whose input signals changed recalculate geometry.
-5. **Rendering is regional.** Only pixel regions whose visual signals changed repaint.
+Embedded profiles admit bounded topology, queues, storage and dynamic content. Desktop/mobile profiles can admit richer capabilities. A target diagnoses unavailable required behavior or requires an authored alternative; unsupported capabilities must not silently approximate the API contract.
 
-This is the SolidJS model, transplanted from browser DOM to native compositor, and backed by Prospero/Olivier actors instead of a JavaScript reactive runtime.
+State discipline is independent of rendering: local signals and optional pure reducers with selective projections can coexist. Network state is a local projection of explicitly replicated domain state, not a synchronous signal spanning machines.
 
-### How It Works
+The first implementation experiment should compare fine leaf bindings, pure area recomputation and a hybrid. Mount/setup lifetime remains stable while a pure area update may run repeatedly. Choose update granularity from memory, scheduling, layout and paint measurements rather than making “components run once” an absolute ban on recomputation.
 
-```
-User taps a button
-    ↓
-Button's onClick handler calls setCount(count + 1)
-    ↓
-count signal notifies its 2 subscribers:
-    ├── Label component (displays count) → repaints 1 text region
-    └── ProgressBar component (width = count * 10) → recalculates 1 layout region, repaints
-    ↓
-2 regions updated. Everything else untouched.
-```
-
-Compare to virtual DOM:
-```
-User taps a button
-    ↓
-setCount(count + 1) triggers full re-render
-    ↓
-Entire view function re-executes (Label, ProgressBar, Header, Footer, Sidebar...)
-    ↓
-New virtual tree produced
-    ↓
-Diff against old tree discovers: Label text changed, ProgressBar width changed
-    ↓
-Apply 2 changes to real rendering surface
-    ↓
-Same 2 regions updated. But the framework did O(n) work to discover that.
-```
-
-## Architecture Layers
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  Developer API                                          │
-│  F# Computation Expressions + Phantom Type Safety       │
-├─────────────────────────────────────────────────────────┤
-│  Component Model                                        │
-│  Components, Signals, Stores, Effects, Context          │
-├─────────────────────────────────────────────────────────┤
-│  Headless Primitives                                    │
-│  Dialog, Select, Menu, Tabs, Toast, Popover             │
-│  (Behavior + accessibility, no visual opinion)          │
-├─────────────────────────────────────────────────────────┤
-│  Design System                                          │
-│  Tokens, Themes, Semantic Classes                       │
-│  (Visual opinion, swappable)                            │
-├─────────────────────────────────────────────────────────┤
-│  Layout Engine                                          │
-│  Stack, Flex, Grid + Constraint Solver                  │
-├─────────────────────────────────────────────────────────┤
-│  Signal-Actor Reactor (Prospero/Olivier)                │
-│  Dependency graph, batched notifications, scheduling    │
-├─────────────────────────────────────────────────────────┤
-│  Rendering Backend (via Fidelity.Platform)              │
-│  Wayland (Linux) | Quartz/Metal (macOS) | D3D12 (Win)  │
-└─────────────────────────────────────────────────────────┘
-```
-
-### Layer Responsibilities
-
-**Developer API**: F# computation expressions (`Component { ... }`, `Stack() { ... }`), phantom type markers for compile-time widget validation, signal primitives (`createSignal`, `createMemo`, `createEffect`). This layer defines what developers write.
-
-**Component Model**: Runtime representation of components, signal subscription management, store architecture (global + local), context/environment propagation. This layer manages the reactive graph.
-
-**Headless Primitives**: UI behavior patterns (focus trapping, keyboard navigation, open/close state machines, selection models) without visual rendering. Inspired by Kobalte/Radix. A `Dialog` knows how to manage focus and escape-key; how it looks is the design system's job.
-
-**Design System**: Hierarchical design tokens (colors, spacing, typography, elevation), theme definitions, semantic classes (`btn`, `card`, `input`). Inspired by DaisyUI/Tailwind's token-based approach. Themes are data, not code - swapping a theme changes the visual system without changing components.
-
-**Layout Engine**: Geometry computation. Stack (vertical/horizontal), Flex (proportional), Grid (two-dimensional). Each layout node subscribes to the signals that affect its geometry (children's sizes, padding, gaps). Layout is incremental - only dirty subtrees recalculate.
-
-**Signal-Actor Reactor**: The Prospero/Olivier substrate. Manages the dependency graph, batches signal notifications (so setting 5 signals in one handler triggers one update pass, not five), and schedules rendering work.
-
-**Rendering Backend**: Platform-specific pixel output. Receives "repaint region X" commands and executes them via the platform compositor. Defined in Fidelity.Platform, not in Fidelity.UI.
-
-## Comparison with Studied Frameworks
-
-| Aspect | Fabulous | ReactiveElmish | SolidJS (web) | Fidelity.UI |
-|--------|----------|----------------|---------------|-------------|
-| Reactivity | Virtual DOM diff | Elmish + selective bind | Fine-grained signals | Signal-Actor |
-| Components | `WidgetBuilder<'msg, 'marker>` struct | ViewModel + Store | Functions run once | CE + phantom types |
-| State | MVU `'model` or `ComponentContext` | `ReactiveElmishStore` | `createSignal`/`createStore` | Actor-backed signals |
-| Styling | Per-widget scalar attrs | XAML + bindings | CSS + Tailwind | Design tokens |
-| Rendering | Platform widget tree | Avalonia | Browser DOM | Native compositor |
-| Runtime | .NET | .NET + ReactiveUI | JavaScript | Firefly native |
-
-Fidelity.UI takes the developer ergonomics of SolidJS (fine-grained signals, components run once), the type safety patterns of Fabulous (phantom markers, computation expressions), the store architecture of ReactiveElmish/TanStack (global + local, selective subscriptions), and the headless component philosophy of Kobalte - all backed by native compilation and actor-model reactivity.
-
-## Navigation
-
-- Previous: [README](../README.md)
-- Next: [01_signal_system.md](./01_signal_system.md): Fine-grained reactivity primitives
+See [reactive semantics](01_signal_system.md), [component model](02_component_model.md), and [area rendering](03_rendering_backends.md).

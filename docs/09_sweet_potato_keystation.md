@@ -160,11 +160,11 @@ cannot make a buffer reusable.
 
 ## The rack-mounted display
 
-The provisional panel is the
-[Waveshare 7.9inch HDMI LCD](https://www.waveshare.com/wiki/7.9inch_HDMI_LCD),
-with 400 × 1280 physical pixels and USB capacitive touch. The exact SKU remains
-unconfirmed. A horizontal installation would present a 1280 × 400 logical
-UI while retaining a compatible physical scanout mode.
+The selected panel is the
+[Waveshare 7.9inch HDMI LCD, SKU 17916](../../Fidelity.Platform/Hardware/Products/Waveshare/7_9inch_HDMI_LCD/README.md),
+Amazon ASIN B087CNJYB4. It has 400 × 1280 physical pixels, HDMI video input
+and USB capacitive touch. KeyStation mounts it horizontally for a 1280 × 400
+logical UI while retaining a compatible physical scanout mode.
 
 The inspected
 [`meson_venc_hdmi_supported_mode`](https://github.com/torvalds/linux/blob/v6.12/drivers/gpu/drm/meson/meson_venc.c)

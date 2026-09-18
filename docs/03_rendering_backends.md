@@ -52,7 +52,7 @@ The shared component language admits different product profiles:
 | Proposed profile | Presentation policy | Evidence required |
 |---|---|---|
 | STM32H7 instrument | Immediate state changes; decorative UI motion omitted by product choice | Bounded controls/paint alongside separately active audio; this omission makes no claim that the chip cannot animate |
-| Sweet Potato KeyStation panel | Selected fades and eased transitions on a provisional Waveshare 7.9-inch HDMI/USB touch display | Accepted portrait scanout and logical/input rotation, native Meson display and restricted Mali rendering, measured layer memory and latency |
+| Sweet Potato KeyStation panel | Selected fades and eased transitions on the selected Waveshare 7.9inch HDMI LCD, SKU 17916 | Accepted portrait scanout and logical/input rotation, native Meson display and restricted Mali rendering, measured layer memory and latency |
 | GPU desktop | Richer motion and retained composition within declared limits | Backend capabilities, frame pacing, resource completion and reduced-motion behavior under load |
 | WREN | The same authored transition intent through admitted browser facilities | Compatible interruption, lifetime and timing behavior in the bundled browser/WebView artifact |
 

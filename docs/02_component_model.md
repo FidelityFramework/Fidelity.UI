@@ -4,6 +4,10 @@ Design direction, September 2026. Examples are proposed notation, not executable
 
 Quiet function/list composition is the preferred starting point. Typed properties and modifiers should prevent invalid combinations. A portable semantic vocabulary describes intent; an HTML extension can expose DOM-specific features without making HTML the native object model.
 
+The authoring goal is native layout as approachable as composing web components: ordinary named functions accept typed properties, actions and child content, then combine controls in rows, columns, grids and overlays. A composite instrument panel should compose, bind and style through the same operations as a built-in control. Responsive choices depend on admitted layout constraints and capabilities. Layout, state variants and optional motion belong in this shared vocabulary, so a richer target does not require a second component language.
+
+LVGL is chiefly a component-model reference here: its widgets share a parent/child tree, styles, parts/states and events. Its C object API creates and mutates retained widgets; borrowing that vocabulary does not make it a pure or cold API. Solid supplies a complementary reference for nested function components, properties/children and the separation of initial setup from selective updates. Fidelity adds cold descriptions and explicit owners, preserving reactive property reads and child identity through native or DOM realization. See [LVGL widget tree](https://lvgl.io/docs/open/9.4/details/common-widget-features/tree.html), [styles](https://lvgl.io/docs/open/9.4/details/common-widget-features/styles/overview.html), [events](https://lvgl.io/docs/open/9.4/details/common-widget-features/events.html), [Solid components](https://docs.solidjs.com/concepts/components/basics) and [reactive properties/children](https://docs.solidjs.com/concepts/components/props).
+
 ```fsharp
 let counter =
     Ui.component (fun () ->
@@ -34,6 +38,7 @@ Activation establishes demand for the required outputs; it need not force every 
 | Conditional branch | Condition plus deferred branch ownership; explicit retention/disposal policy |
 | Keyed collection | Stable key plus a separately updateable current item payload |
 | Area | Stable visual identity, scope, constraints and stage outputs |
+| Motion | Cold transition description; owned clock demand, interruption policy and target capability |
 | Execution boundary | Placement/transfer/admission policy, independent of visual nesting |
 
 Ordinary `if`/`for` during construction and dynamic conditional/keyed operations are different. A compiler may make dynamic syntax concise, but must preserve dependency, identity and disposal semantics. Duplicate keys, same-key replacements and index-dependent state need defined behavior.

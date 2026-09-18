@@ -1,6 +1,6 @@
 # 03 — The native reactive-area engine
 
-Design direction, September 2026. Building a new Clef-native reactive-area engine is the primary native objective. HelloWayland supplies experimental presentation and parallel raster evidence; it is not this engine. LVGL is an embedded UI reference rather than a mandated dependency or internal architecture.
+Design direction, September 2026. Building a new Clef-native reactive-area engine is the primary native objective. HelloWayland supplies experimental presentation and parallel raster evidence; it is not this engine. LVGL chiefly informs the component model, and also offers rendering/resource lessons; its runtime and internal architecture are not mandated.
 
 An area has mounted identity, a disposal scope, reactive inputs, incoming constraints and retained outputs. Its outputs may include measurement/layout, paint commands, hit regions and accessibility semantics. An area is not necessarily a framebuffer, actor, OS surface or rectangular clip.
 
@@ -24,6 +24,10 @@ For an initial concurrent experiment, versioned immutable area results are easie
 
 Damage must cover old and new visual bounds, clipping, transforms, shadows, overlap and z-order. Removal and movement must erase old pixels. Bound rectangle/tile accumulation and allow conservative merging or full-area redraw. Cache output where useful; do not require one full-size buffer per area.
 
+Fades, eased movement and state transitions should use the same component properties on native and DOM targets. A cold motion description acquires clock/frame demand only when its owner activates a transition. Sample progress from elapsed monotonic time rather than assuming a fixed frame rate. Define duration/easing, retargeting from the currently presented value, cancellation versus completion, and suspension/resumption policy. A finished or retired transition releases its clock demand; an explicit repeating animation remains active work. Motion changes presentation values without rewriting the authoritative application target on each frame. See [LVGL animation](https://lvgl.io/docs/open/9.4/details/main-modules/animation.html) for useful timing, path and lifecycle concepts; Fidelity's ownership contract remains its own.
+
+Width or padding animation can invalidate measurement and sibling layout; color can invalidate paint. Group opacity or transforms may reuse cached content only if clipping, blending and retained-layer semantics permit it. A layer costs memory and may need rerasterization when its content changes. Bound layer count/bytes, uploads and pending frames; never allocate a texture per component by default. DOM realization may use browser animation facilities where their timing and cancellation can preserve the contract. GPU completion and compositor release still govern buffer reuse after a transition is cancelled.
+
 Execution can progress through explicit tiers:
 
 | Tier | Placement |
@@ -42,5 +46,18 @@ Platform integration supplies windows, surfaces, input and native rendering faci
 The browser adapter maps admitted areas/controls to DOM structures. The browser performs layout and painting; a native damage rectangle does not map to a guaranteed browser repaint boundary. Shared API parity concerns behavior, identity, binding and lifecycle within declared capabilities.
 
 Embedded realization needs bounded nodes/edges/queues, partial buffers, display flush completion, device-specific pixel formats and measured resource limits. It must not require a desktop thread pool or a full framebuffer per area.
+
+The shared component language admits different product profiles:
+
+| Proposed profile | Presentation policy | Evidence required |
+|---|---|---|
+| STM32H7 instrument | Immediate state changes; decorative UI motion omitted by product choice | Bounded controls/paint alongside separately active audio; this omission makes no claim that the chip cannot animate |
+| Sweet Potato instrument/panel | Selected fades and eased transitions on the intended Waveshare 7-inch ultrawide touch display | Accepted display/input integration and measured software or GPU rendering path, layer memory and latency |
+| GPU desktop | Richer motion and retained composition within declared limits | Backend capabilities, frame pacing, resource completion and reduced-motion behavior under load |
+| WREN | The same authored transition intent through admitted browser facilities | Compatible interruption, lifetime and timing behavior in the bundled browser/WebView artifact |
+
+Omitting decorative UI motion does not disable live meter updates, sensor filtering or DSP pitch/control smoothing; those serve separate application behavior and timing contracts.
+
+Sweet Potato remains a candidate profile. Hardware video decoding, HDMI scanout and GPU UI rendering are separate facilities: the first two do not establish a working graphics submission, blending or synchronization path. An OS-supported GPU driver also does not automatically provide a bare-metal/unikernel driver. Select and measure the actual deployment path before promising accelerated fades. These profiles vary presentation capability and budgets, not component identity, actions or application semantics.
 
 The decisive native acceptance case combines telemetry, local editing, text-driven resizing, moved/removed translucent content and repeated disposal. Compare partial-update output with forced full redraw; instrument avoided measurement/paint/raster work and verify stale-result rejection, queue bounds and buffer reuse. See the [review](08_ui_model_reconsideration.md).

@@ -14,7 +14,7 @@ Research alignment, September 2026. These are references to study, not adopted d
 | Jimmy Byrd's WebSharper ViewCE | Source adaptation and applicative composition of reactive values | `View<'T>` is a changing value, not a visual element; builder syntax does not establish mounted lifetime |
 | AdaptiveSlop | Pull-oriented computation, explicit graph ownership and functional terminal views | Collaborative experimental code; inspected TUI timers conflict with its newer core ownership rule |
 | Solid | Fine-grained bindings, reactive owners and framework compilation | Effect timing, batches and cleanup must be adapted rather than assumed identical |
-| LVGL | Embedded control/rendering scope, partial buffers, flush completion and thread ownership | A C wrapper or internal clone is not the chosen new native-area architecture |
+| LVGL | Widget tree, parts/states/styles, layouts, events and transitions; embedded rendering/resource lessons | Its mutable C object API and internal renderer do not define the cold functional facade |
 
 Ripple already offers both quiet DOM calls and a signal CE. That is evidence that surface notation and reactive semantics are separable. Its DOM constructors create live objects immediately; a clean native/portable API should instead establish owned mounting. Its keyed row reuse also illustrates why key identity and current payload updates need separate contracts.
 

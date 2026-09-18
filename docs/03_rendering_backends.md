@@ -52,12 +52,12 @@ The shared component language admits different product profiles:
 | Proposed profile | Presentation policy | Evidence required |
 |---|---|---|
 | STM32H7 instrument | Immediate state changes; decorative UI motion omitted by product choice | Bounded controls/paint alongside separately active audio; this omission makes no claim that the chip cannot animate |
-| Sweet Potato instrument/panel | Selected fades and eased transitions on the intended Waveshare 7-inch ultrawide touch display | Accepted display/input integration and measured software or GPU rendering path, layer memory and latency |
+| Sweet Potato KeyStation panel | Selected fades and eased transitions on a provisional Waveshare 7.9-inch HDMI/USB touch display | Accepted portrait scanout and logical/input rotation, native Meson display and restricted Mali rendering, measured layer memory and latency |
 | GPU desktop | Richer motion and retained composition within declared limits | Backend capabilities, frame pacing, resource completion and reduced-motion behavior under load |
 | WREN | The same authored transition intent through admitted browser facilities | Compatible interruption, lifetime and timing behavior in the bundled browser/WebView artifact |
 
 Omitting decorative UI motion does not disable live meter updates, sensor filtering or DSP pitch/control smoothing; those serve separate application behavior and timing contracts.
 
-Sweet Potato remains a candidate profile. Hardware video decoding, HDMI scanout and GPU UI rendering are separate facilities: the first two do not establish a working graphics submission, blending or synchronization path. An OS-supported GPU driver also does not automatically provide a bare-metal/unikernel driver. Select and measure the actual deployment path before promising accelerated fades. These profiles vary presentation capability and budgets, not component identity, actions or application semantics.
+The [Sweet Potato design](09_sweet_potato_keystation.md) selects a CPU reference renderer, native Meson HDMI/input integration and then a restricted Mali-450 renderer for the proposed KeyStation unikernel. Linux supplies a separate hosted route and hardware reference. Video decoding, display scanout and GPU drawing have distinct drivers and acceptance gates. These profiles vary presentation capability and budgets while preserving component identity, actions and application semantics.
 
 The decisive native acceptance case combines telemetry, local editing, text-driven resizing, moved/removed translucent content and repeated disposal. Compare partial-update output with forced full redraw; instrument avoided measurement/paint/raster work and verify stale-result rejection, queue bounds and buffer reuse. See the [review](08_ui_model_reconsideration.md).

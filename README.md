@@ -28,6 +28,7 @@ The [architectural review](docs/08_ui_model_reconsideration.md) gives the source
 - [WREN and native convergence](docs/05_wren_migration.md)
 - [Lessons from prior art](docs/06_prior_art.md)
 - [Reducers and selective state](docs/07_elmish_signal_hybrid.md)
+- [Sweet Potato and the KeyStation native graphics port](docs/09_sweet_potato_keystation.md)
 
 Next evidence: a native control panel with independently changing areas, text-driven resize, overlapping content and correct partial redraw; then the same semantic components in a DOM host, independent execution domains and a bounded physical embedded target. These are planned acceptance gates, not completed capabilities.
 

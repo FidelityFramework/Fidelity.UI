@@ -36,3 +36,23 @@ State discipline is independent of rendering: local signals and optional pure re
 The first implementation experiment should compare fine leaf bindings, pure area recomputation and a hybrid. Mount/setup lifetime remains stable while a pure area update may run repeatedly. Choose update granularity from memory, scheduling, layout and paint measurements rather than making “components run once” an absolute ban on recomputation.
 
 See [reactive semantics](01_signal_system.md), [component model](02_component_model.md), and [area rendering](03_rendering_backends.md).
+
+## Compiler planning alignment — 2026-09-20
+
+[Composer M-01](../../Composer/docs/PRDs/M-01-DialectAdmission.md) treats the piped
+FP and CE forms here as triangulation for complete language expression. UI
+quotations and declarations contribute target, ownership, demand and execution
+facts to Baker; Alex witnesses the settled graph in the form appropriate to the
+selected native or browser backend. No rendering-specific semantic dialect is
+implied. Numeric selection governs geometry/arithmetic eligibility and precision;
+parallel layout/paint also requires access, publication, completion and progress
+contracts under the actual display/platform profile.
+
+Planned acceptance pairs serial and parallel results, bounded-device resource
+failures, target capability changes, stale work after invalidation and ownership
+retirement. Source-related CCS diagnostics and design-time evidence must agree
+with compilation. HelloWayland's working CPU renderer is an oracle, not a proof
+of all targets or the completed actor model. Native Fidelity.UI remains primary;
+an optional Farscape/LVGL adapter implements the shared interface. The
+[waypoints](../../Composer/docs/Language_Coverage_Waypoints.md) record coordinated
+revisions; this synchronization adds no engine implementation or test evidence.
